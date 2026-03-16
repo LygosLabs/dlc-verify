@@ -1,0 +1,20 @@
+{
+  "name": "dlc-verify",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "verify": "node verify.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@atomicfinance/bitcoin-cfd-provider": "^4.2.7",
+    "@node-dlc/messaging": "^1.1.7",
+    "bitcoin-networks": "^1.0.0",
+    "bitcoinjs-lib": "^7.0.1"
+  }
+}
