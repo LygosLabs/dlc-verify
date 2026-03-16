@@ -5,9 +5,12 @@ const bitcoin = require('bitcoinjs-lib');
 const { verify, math } = require('bip-schnorr');
 const { BitcoinNetworks, chainHashFromNetwork } = require('bitcoin-networks');
 const BitcoinCfdProvider = require('@atomicfinance/bitcoin-cfd-provider').default;
+const BitcoinDlcProvider = require('@atomicfinance/bitcoin-dlc-provider').default;
+const { BitcoinNetworks: DlcBitcoinNetworks } = require('bitcoin-network');
 const {
   DlcOffer,
   DlcAccept,
+  DlcSign,
   EnumeratedDescriptor,
   NumericalDescriptor,
   SingleOracleInfo,
@@ -260,22 +263,85 @@ function buildCetTxHexes(offer, accept, descriptor, fundTxId, fundOutputIndex) {
 }
 
 async function initCfd() {
-  const wasmPath = path.join(__dirname, 'node_modules/cfd-js-wasm/dist/cfdjs_wasm.wasm');
-  const wasmBinary = fs.readFileSync(wasmPath);
-  const savedFetch = global.fetch;
+  const candidates = [
+    {
+      pkgName: 'cfd-dlc-js-wasm',
+      wasmFile: 'cfddlcjs_wasm.wasm',
+      getFn: 'getCfddlc',
+      loadMode: 'fetch-file',
+    },
+    {
+      pkgName: 'cfd-js-wasm',
+      wasmFile: 'cfdjs_wasm.wasm',
+      getFn: 'getCfd',
+      loadMode: 'module-binary',
+    },
+  ];
 
-  // Node 25 fetch() cannot load absolute filesystem paths used by this package.
-  global.fetch = undefined;
-  global.Module = { ...(global.Module || {}), wasmBinary };
+  let lastErr = null;
+  for (const candidate of candidates) {
+    const wasmPath = path.join(__dirname, `node_modules/${candidate.pkgName}/dist/${candidate.wasmFile}`);
+    if (!fs.existsSync(wasmPath)) continue;
 
-  try {
-    const cfdJsWasm = require('./node_modules/cfd-js-wasm');
-    await new Promise((resolve) => cfdJsWasm.addInitializedListener(resolve));
-    const cfd = await cfdJsWasm.getCfd();
-    return cfd;
-  } finally {
-    global.fetch = savedFetch;
+    const savedFetch = global.fetch;
+    const savedModule = global.Module;
+
+    if (candidate.loadMode === 'fetch-file') {
+      // cfd-dlc-js-wasm requests a relative wasm URL through fetch().
+      global.fetch = async (input) => {
+        const inputStr = typeof input === 'string' ? input : input?.url || String(input);
+        if (inputStr.endsWith(candidate.wasmFile)) {
+          const bytes = fs.readFileSync(wasmPath);
+          return new Response(bytes, {
+            status: 200,
+            headers: { 'content-type': 'application/wasm' },
+          });
+        }
+        if (savedFetch) return savedFetch(input);
+        throw new Error(`Unsupported fetch URL in ${candidate.pkgName}: ${inputStr}`);
+      };
+      global.Module = savedModule;
+    } else {
+      const wasmBinary = fs.readFileSync(wasmPath);
+      // Node 25 fetch() cannot load filesystem paths used by cfd-js-wasm.
+      global.fetch = undefined;
+      global.Module = { ...(global.Module || {}), wasmBinary };
+    }
+
+    try {
+      const cfdJsWasm = require(`./node_modules/${candidate.pkgName}`);
+      const getCfdFn = cfdJsWasm[candidate.getFn];
+      if (typeof getCfdFn !== 'function') {
+        throw new Error(`Missing ${candidate.getFn}() on ${candidate.pkgName}`);
+      }
+      if (typeof cfdJsWasm.addInitializedListener === 'function') {
+        await Promise.race([
+          new Promise((resolve) => cfdJsWasm.addInitializedListener(resolve)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('WASM init timed out')), 15000)),
+        ]);
+      }
+      const cfd = await getCfdFn();
+
+      if (candidate.pkgName === 'cfd-dlc-js-wasm') {
+        const deadline = Date.now() + 10000;
+        while (typeof cfd.CreateDlcTransactions !== 'function' && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (typeof cfd.CreateDlcTransactions !== 'function') {
+          throw new Error('cfd-dlc-js-wasm did not expose CreateDlcTransactions');
+        }
+      }
+
+      return cfd;
+    } catch (err) {
+      lastErr = err;
+    } finally {
+      global.fetch = savedFetch;
+      global.Module = savedModule;
+    }
   }
+
+  throw lastErr || new Error('Could not initialize any supported CFD WASM module');
 }
 
 async function tryTier2(offer, accept, descriptor, fundingAddress) {
@@ -285,44 +351,54 @@ async function tryTier2(offer, accept, descriptor, fundingAddress) {
     fundTxId: null,
     cetCount: null,
     adaptorValid: null,
+    adaptorError: null,
     refundSigValid: null,
     computedContractId: null,
   };
 
   try {
     const cfd = await initCfd();
-    const provider = new BitcoinCfdProvider(cfd);
-    await provider.GetSupportedFunction();
+    const cfdProvider = new BitcoinCfdProvider(cfd);
+    await cfdProvider.GetSupportedFunction();
 
-    const singleFundedComputation = tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress);
-    if (!singleFundedComputation) {
-      result.available = true;
-      result.note = 'Tier 2 loaded, but this sample is not single-funded so automatic fund/CET reconstruction is unavailable.';
-      return result;
+    const detected = detectNetwork(offer.chainHash);
+    const dlcNetwork = DlcBitcoinNetworks[detected.name] || DlcBitcoinNetworks.bitcoin_regtest;
+    const dlcProvider = new BitcoinDlcProvider(dlcNetwork, cfdProvider);
+
+    const { dlcTransactions, messagesList } = await dlcProvider.createDlcTxs(offer, accept);
+    const verifyCetAdaptorAndRefundSigs =
+      dlcProvider.VerifyCetAdaptorAndRefundSigs || dlcProvider['VerifyCetAdaptorAndRefundSigs'];
+    if (typeof verifyCetAdaptorAndRefundSigs !== 'function') {
+      throw new Error('BitcoinDlcProvider.VerifyCetAdaptorAndRefundSigs is not callable');
     }
 
-    const cetsHex = buildCetTxHexes(
-      offer,
-      accept,
-      descriptor,
-      singleFundedComputation.fundTxId,
-      singleFundedComputation.fundOutputIndex,
-    );
-    const adaptorSigs = accept.cetAdaptorSignatures?.sigs || [];
-    const adaptorShapeValid = adaptorSigs.every(
-      (sig) => sig?.encryptedSig?.length === 65 && sig?.dleqProof?.length === 97,
-    );
-    const adaptorCountValid = adaptorSigs.length === cetsHex.length;
-    const refundSigLen = accept.refundSignature?.length || 0;
-    const refundSigValid = refundSigLen === 64 || refundSigLen === 65;
+    try {
+      await verifyCetAdaptorAndRefundSigs.call(
+        dlcProvider,
+        offer,
+        accept,
+        new DlcSign(),
+        dlcTransactions,
+        messagesList,
+        true,
+      );
+      result.adaptorValid = true;
+      result.refundSigValid = true;
+    } catch (verifyErr) {
+      result.adaptorValid = false;
+      result.refundSigValid = false;
+      result.adaptorError = verifyErr.message;
+    }
 
     result.available = true;
-    result.fundTxId = singleFundedComputation.fundTxId;
-    result.cetCount = cetsHex.length;
-    result.adaptorValid = adaptorShapeValid && adaptorCountValid;
-    result.refundSigValid = refundSigValid;
-    result.computedContractId = `${singleFundedComputation.cidRpcTxid} (rpc-txid convention)`;
-    result.note = 'Tier 2 loaded with cfd-js-wasm + bitcoin-cfd-provider. Runtime package lacks high-level VerifyCetAdaptorAndRefundSigs API, so signatures are validated by strict structural checks (count/shape).';
+    result.fundTxId = dlcTransactions.fundTx.txId.toString();
+    result.cetCount = dlcTransactions.cets.length;
+    result.computedContractId = dlcTransactions.contractId
+      ? `${dlcTransactions.contractId.toString('hex')} (from createDlcTxs)`
+      : null;
+    result.note = result.adaptorValid
+      ? 'Tier 2 cryptographic verification completed via BitcoinDlcProvider.VerifyCetAdaptorAndRefundSigs.'
+      : 'Tier 2 cryptographic verification failed.';
     return result;
   } catch (err) {
     result.note = `Tier 2 unavailable: ${err.message}`;
@@ -453,11 +529,18 @@ async function main() {
   if (tier2.available) {
     if (tier2.fundTxId) lines.push(`  Fund TX ID: ${tier2.fundTxId}`);
     if (tier2.cetCount !== null) lines.push(`  CET count: ${tier2.cetCount}`);
-    if (tier2.adaptorValid !== null) lines.push(`  Adaptor signatures valid: ${tier2.adaptorValid}`);
-    if (tier2.refundSigValid !== null) lines.push(`  Refund signature valid: ${tier2.refundSigValid}`);
+    if (tier2.adaptorValid === true) lines.push('  Adaptor signatures: CRYPTOGRAPHICALLY VALID');
+    if (tier2.adaptorValid === false) {
+      lines.push(
+        `  Adaptor signatures: CRYPTOGRAPHICALLY INVALID${tier2.adaptorError ? ` (${tier2.adaptorError})` : ''}`,
+      );
+    }
+    if (tier2.refundSigValid === true) lines.push('  Refund signature: CRYPTOGRAPHICALLY VALID');
+    if (tier2.refundSigValid === false) lines.push('  Refund signature: CRYPTOGRAPHICALLY INVALID');
     if (tier2.note) lines.push(`  Note: ${tier2.note}`);
   } else {
     lines.push(`  ${tier2.note}`);
+    lines.push(`  Adaptor signatures: CRYPTOGRAPHICALLY INVALID (${tier2.note})`);
   }
 
   if (!tier2.available || !tier2.fundTxId) {
