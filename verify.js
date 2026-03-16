@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const { verify, math } = require('bip-schnorr');
 const { BitcoinNetworks, chainHashFromNetwork } = require('bitcoin-networks');
+const { DlcTxBuilder } = require('@node-dlc/core');
 const {
   DlcOffer,
   DlcAccept,
@@ -149,7 +150,7 @@ function estimateSingleFundedFee(offer, inCount, outCount, hasWitness) {
   return BigInt(vbytes) * offer.feeRatePerVb;
 }
 
-function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress) {
+function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress, feeOverride) {
   if (accept.acceptCollateral !== 0n || accept.fundingInputs.length > 0) {
     return null;
   }
@@ -161,9 +162,53 @@ function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress) {
 
   if (!fundingAddress.scriptPubKeyHex) return null;
 
+  // Prefer exact reconstruction from node-dlc's transaction builder.
+  if (feeOverride === undefined) {
+    try {
+      const builtFundTx = new DlcTxBuilder(offer, accept).buildFundingTransaction();
+      const builtFundTxHex = builtFundTx.toHex();
+      const parsedFundTx = bitcoin.Transaction.fromHex(builtFundTxHex);
+      const fundTxId = parsedFundTx.getId();
+      const fundOutputIndex = parsedFundTx.outs.findIndex(
+        (out) => Buffer.from(out.script).toString('hex') === fundingAddress.scriptPubKeyHex,
+      );
+      if (fundOutputIndex >= 0) {
+        const totalOutput = parsedFundTx.outs.reduce((sum, out) => sum + BigInt(out.value), 0n);
+        const fee = offerInputTotal - totalOutput;
+        const offerChange = parsedFundTx.outs.reduce((sum, out) => {
+          const scriptHex = Buffer.from(out.script).toString('hex');
+          if (scriptHex === offer.changeSpk.toString('hex')) return sum + BigInt(out.value);
+          return sum;
+        }, 0n);
+
+        const cidRpcTxid = computeContractIdFromFundingOutpoint(
+          offer.temporaryContractId,
+          fundTxId,
+          fundOutputIndex,
+        );
+        const cidInternalTxid = computeContractIdFromFundingOutpoint(
+          offer.temporaryContractId,
+          Buffer.from(fundTxId, 'hex').reverse().toString('hex'),
+          fundOutputIndex,
+        );
+
+        return {
+          fundTxId,
+          fundOutputIndex,
+          fee,
+          offerChange,
+          cidRpcTxid,
+          cidInternalTxid,
+        };
+      }
+    } catch (_) {
+      // Fallback to model-based reconstruction below.
+    }
+  }
+
   const inCount = offer.fundingInputs.length;
   const outCount = 2;
-  const fee = estimateSingleFundedFee(offer, inCount, outCount, true);
+  const fee = feeOverride ?? estimateSingleFundedFee(offer, inCount, outCount, true);
   const offerChange = offerInputTotal - offer.offerCollateral - fee;
   if (offerChange < 0n) return null;
 
@@ -232,18 +277,22 @@ function buildCetTxHexes(offer, accept, descriptor, fundTxId, fundOutputIndex) {
   for (const outcome of outcomes) {
     const offerPayout = outcome.localPayout;
     const acceptPayout = totalCollateral - offerPayout;
-    const outputs = [
-      {
+    const outputs = [];
+    if (offerPayout > 0n) {
+      outputs.push({
         serialId: offerSerial,
         value: offerPayout,
         script: offer.payoutSpk,
-      },
-      {
+      });
+    }
+    if (acceptPayout > 0n) {
+      outputs.push({
         serialId: acceptSerial,
         value: acceptPayout,
         script: accept.payoutSpk,
-      },
-    ].sort((a, b) => (a.serialId < b.serialId ? -1 : 1));
+      });
+    }
+    outputs.sort((a, b) => (a.serialId < b.serialId ? -1 : 1));
 
     const tx = new bitcoin.Transaction();
     tx.version = 2;
@@ -259,152 +308,35 @@ function buildCetTxHexes(offer, accept, descriptor, fundTxId, fundOutputIndex) {
 }
 
 async function initCfd() {
-  try {
-    const cfd = require('cfd-js');
-    if (typeof cfd.GetSupportedFunction !== 'function') {
-      throw new Error('cfd-js missing GetSupportedFunction');
-    }
-    cfd.GetSupportedFunction({});
-    return cfd;
-  } catch (_) {
-    // fallback to WASM candidates below
-  }
-
-  const candidates = [
-    {
-      pkgName: 'cfd-dlc-js-wasm',
-      wasmFile: 'cfddlcjs_wasm.wasm',
-      getFn: 'getCfddlc',
-      loadMode: 'fetch-file',
-    },
-    {
-      pkgName: 'cfd-js-wasm',
-      wasmFile: 'cfdjs_wasm.wasm',
-      getFn: 'getCfd',
-      loadMode: 'module-binary',
-    },
+  // Tier 2 now uses DDK (ddk-ts native binary) for adaptor sig verification.
+  // Probe for ddk-ts native binary (arm64 or x64)
+  const ddkPaths = [
+    path.join(__dirname, 'node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node'),
+    path.join(__dirname, 'node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-x64.node'),
+    path.join(__dirname, 'node_modules/@bennyblader/ddk-ts/dist/ddk-ts.linux-x64-gnu.node'),
   ];
+  // Also check orange-grove's pnpm store as fallback
+  const ogDdkPath = path.resolve(__dirname, '../lygos/orange-grove/node_modules/.pnpm/@bennyblader+ddk-ts@0.3.32/node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node');
+  ddkPaths.push(ogDdkPath);
 
-  let lastErr = null;
-  for (const candidate of candidates) {
-    const wasmPath = path.join(__dirname, `node_modules/${candidate.pkgName}/dist/${candidate.wasmFile}`);
-    if (!fs.existsSync(wasmPath)) continue;
-
-    const savedFetch = global.fetch;
-    const savedModule = global.Module;
-
-    if (candidate.loadMode === 'fetch-file') {
-      // cfd-dlc-js-wasm requests a relative wasm URL through fetch().
-      global.fetch = async (input) => {
-        const inputStr = typeof input === 'string' ? input : input?.url || String(input);
-        if (inputStr.endsWith(candidate.wasmFile)) {
-          const bytes = fs.readFileSync(wasmPath);
-          return new Response(bytes, {
-            status: 200,
-            headers: { 'content-type': 'application/wasm' },
-          });
-        }
-        if (savedFetch) return savedFetch(input);
-        throw new Error(`Unsupported fetch URL in ${candidate.pkgName}: ${inputStr}`);
-      };
-      global.Module = savedModule;
-    } else {
-      const wasmBinary = fs.readFileSync(wasmPath);
-      // Node 25 fetch() cannot load filesystem paths used by cfd-js-wasm.
-      global.fetch = undefined;
-      global.Module = { ...(global.Module || {}), wasmBinary };
-    }
-
-    try {
-      const cfdJsWasm = require(`./node_modules/${candidate.pkgName}`);
-      const getCfdFn = cfdJsWasm[candidate.getFn];
-      if (typeof getCfdFn !== 'function') {
-        throw new Error(`Missing ${candidate.getFn}() on ${candidate.pkgName}`);
-      }
-      if (typeof cfdJsWasm.addInitializedListener === 'function') {
-        await Promise.race([
-          new Promise((resolve) => cfdJsWasm.addInitializedListener(resolve)),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('WASM init timed out')), 15000)),
-        ]);
-      }
-      const cfd = await getCfdFn();
-
-      if (candidate.pkgName === 'cfd-dlc-js-wasm') {
-        const deadline = Date.now() + 10000;
-        while (typeof cfd.CreateDlcTransactions !== 'function' && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        if (typeof cfd.CreateDlcTransactions !== 'function') {
-          throw new Error('cfd-dlc-js-wasm did not expose CreateDlcTransactions');
-        }
-      }
-
-      return cfd;
-    } catch (err) {
-      lastErr = err;
-    } finally {
-      global.fetch = savedFetch;
-      global.Module = savedModule;
-    }
+  for (const ddkPath of ddkPaths) {
+    if (!fs.existsSync(ddkPath)) continue;
+    const m = { exports: {} };
+    process.dlopen(m, ddkPath);
+    return m.exports;
   }
 
-  throw lastErr || new Error('Could not initialize any supported CFD WASM module');
+  throw new Error('Could not find ddk-ts native binary for Tier 2 verification');
 }
 
-function getCetAdaptorSigs(accept) {
-  if (Array.isArray(accept?.cetAdaptorSignatures)) return accept.cetAdaptorSignatures;
-  if (Array.isArray(accept?.cetAdaptorSignatures?.sigs)) return accept.cetAdaptorSignatures.sigs;
-  return [];
-}
-
-function getEnumOutcomeHash(outcomeText) {
-  return crypto.createHash('sha256').update(Buffer.from(outcomeText, 'utf8')).digest('hex');
-}
-
-function verifySingleCetAdaptorSig({
-  cfd,
-  encryptedSigHex,
-  oracleAdaptorPointHex,
-  counterpartyFundingPubkeyHex,
-  fundingWitnessScriptHex,
-  cetHex,
-  fundInputAmount,
-}) {
-  if (encryptedSigHex.length !== 130) {
-    throw new Error(`encryptedSig must be 65 bytes, got ${encryptedSigHex.length / 2}`);
-  }
-
-  const adaptorNonceR = encryptedSigHex.slice(0, 66);
-  const adaptorScalarS = encryptedSigHex.slice(66);
-  const combinedNonce = cfd.CombinePubkey({ pubkeys: [adaptorNonceR, oracleAdaptorPointHex] }).pubkey;
-  const combinedNonceSchnorr = cfd.GetSchnorrPubkeyFromPubkey({ pubkey: combinedNonce }).pubkey;
-  const counterpartySchnorrPubkey = cfd.GetSchnorrPubkeyFromPubkey({
-    pubkey: counterpartyFundingPubkeyHex,
-  }).pubkey;
-
-  const cetTx = bitcoin.Transaction.fromHex(cetHex);
-  const sighash = Buffer.from(
-    cetTx.hashForWitnessV0(
-      0,
-      Buffer.from(fundingWitnessScriptHex, 'hex'),
-      fundInputAmount,
-      bitcoin.Transaction.SIGHASH_ALL,
-    ),
-  ).toString('hex');
-
-  const rhs = cfd.ComputeSigPointSchnorrPubkey({
-    schnorrPubkey: counterpartySchnorrPubkey,
-    nonce: combinedNonceSchnorr,
-    message: sighash,
-    isHashed: true,
-  }).pubkey;
-
-  const lhs = cfd.GetPubkeyFromPrivkey({
-    privkey: adaptorScalarS,
-    isCompressed: true,
-  }).pubkey;
-
-  return lhs === rhs;
+function getTaggedOutcomeHash(outcomeText) {
+  const tag = Buffer.from('DLC/oracle/attestation/v0', 'utf8');
+  const tagHash = crypto.createHash('sha256').update(tag).digest();
+  const outcomeBytes = Buffer.from(outcomeText, 'utf8');
+  return crypto
+    .createHash('sha256')
+    .update(Buffer.concat([tagHash, tagHash, outcomeBytes]))
+    .digest();
 }
 
 async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement) {
@@ -422,7 +354,7 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
   };
 
   try {
-    const cfd = await initCfd();
+    const ddk = await initCfd(); // now returns ddk-ts native module
     if (!(descriptor instanceof EnumeratedDescriptor)) {
       throw new Error('Tier 2 currently supports EnumeratedDescriptor contracts only');
     }
@@ -431,68 +363,113 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       throw new Error('Missing oracle announcement pubkey/nonce for adaptor verification');
     }
 
-    const adaptorSigs = getCetAdaptorSigs(accept);
-    const singleFundedComputation = tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress);
-    if (!singleFundedComputation) {
-      throw new Error('Could not reconstruct funding outpoint required for CET sighashes');
-    }
+    // Build DLC transactions via DDK (deterministic reconstruction)
+    const outcomes = descriptor.outcomes.map((o) => ({
+      offer: BigInt(o.localPayout),
+      accept: BigInt(offer.contractInfo.totalCollateral) - BigInt(o.localPayout),
+    }));
 
-    const cetHexes = buildCetTxHexes(
-      offer,
-      accept,
-      descriptor,
-      singleFundedComputation.fundTxId,
-      singleFundedComputation.fundOutputIndex,
+    const fi = offer.fundingInputs[0];
+    // CRITICAL: use toString() for display-order txid, NOT toString('hex')
+    const localParams = {
+      fundPubkey: offer.fundingPubkey,
+      changeScriptPubkey: offer.changeSpk,
+      changeSerialId: BigInt(offer.changeSerialId),
+      payoutScriptPubkey: offer.payoutSpk,
+      payoutSerialId: BigInt(offer.payoutSerialId),
+      inputs: [{
+        txid: fi.prevTx.txId.toString(),
+        vout: fi.prevTxVout,
+        scriptSig: Buffer.alloc(0),
+        maxWitnessLength: fi.maxWitnessLen,
+        serialId: BigInt(fi.inputSerialId),
+      }],
+      inputAmount: BigInt(fi.prevTx.outputs[fi.prevTxVout].value.sats),
+      collateral: BigInt(offer.offerCollateral),
+      dlcInputs: [],
+    };
+
+    // Build remote params (accepter may have 0 collateral in single-funded model)
+    const remoteInputs = accept.fundingInputs.map((afi) => ({
+      txid: afi.prevTx.txId.toString(),
+      vout: afi.prevTxVout,
+      scriptSig: Buffer.alloc(0),
+      maxWitnessLength: afi.maxWitnessLen,
+      serialId: BigInt(afi.inputSerialId),
+    }));
+    const remoteInputAmount = accept.fundingInputs.reduce(
+      (sum, afi) => sum + BigInt(afi.prevTx.outputs[afi.prevTxVout].value.sats),
+      0n,
     );
-    if (cetHexes.length !== adaptorSigs.length) {
-      throw new Error(
-        `CET/signature count mismatch: ${cetHexes.length} CETs vs ${adaptorSigs.length} adaptor signatures`,
-      );
-    }
+    const remoteParams = {
+      fundPubkey: accept.fundingPubkey,
+      changeScriptPubkey: accept.changeSpk,
+      changeSerialId: BigInt(accept.changeSerialId),
+      payoutScriptPubkey: accept.payoutSpk,
+      payoutSerialId: BigInt(accept.payoutSerialId),
+      inputs: remoteInputs,
+      inputAmount: remoteInputAmount,
+      collateral: BigInt(accept.acceptCollateral),
+      dlcInputs: [],
+    };
 
-    const counterpartyFundingPubkeyHex = accept.fundingPubkey.toString('hex');
-    const oracleSchnorrPubkey = oracleAnnouncement.oraclePublicKey.toString('hex');
-    const oracleNonce = oracleAnnouncement.oracleEvent.oracleNonces[0].toString('hex');
+    const dlcTxs = ddk.createDlcTransactions(
+      outcomes, localParams, remoteParams,
+      offer.refundLocktime, BigInt(offer.feeRatePerVb), 0,
+      offer.cetLocktime, BigInt(offer.fundOutputSerialId),
+    );
 
-    const failures = [];
-    for (let i = 0; i < cetHexes.length; i++) {
-      const outcome = descriptor.outcomes[i];
-      const outcomeMessageHash = getEnumOutcomeHash(outcome.outcome);
-      const oracleAdaptorPoint = cfd.ComputeSigPointSchnorrPubkey({
-        schnorrPubkey: oracleSchnorrPubkey,
-        nonce: oracleNonce,
-        message: outcomeMessageHash,
-        isHashed: true,
-      }).pubkey;
+    // Compute fund txid from DDK-built fund transaction
+    const fundTxId = crypto
+      .createHash('sha256')
+      .update(crypto.createHash('sha256').update(dlcTxs.fund.rawBytes).digest())
+      .digest()
+      .reverse()
+      .toString('hex');
 
-      const encryptedSigHex = adaptorSigs[i].encryptedSig.toString('hex');
-      const valid = verifySingleCetAdaptorSig({
-        cfd,
-        encryptedSigHex,
-        oracleAdaptorPointHex: oracleAdaptorPoint,
-        counterpartyFundingPubkeyHex,
-        fundingWitnessScriptHex: fundingAddress.witnessScriptHex,
-        cetHex: cetHexes[i],
-        fundInputAmount: offer.contractInfo.totalCollateral,
-      });
+    // Build tagged attestation messages: Array<Array<Array<Buffer>>> (per-CET → per-oracle → msgs)
+    const messagesForDdk = descriptor.outcomes.map((o) => [[getTaggedOutcomeHash(o.outcome)]]);
 
-      if (!valid) {
-        failures.push(`CET #${i} (${outcome.outcome}) failed Schnorr adaptor equation`);
-      }
-    }
+    // Funding script: 2-of-2 P2MS in lexicographic pubkey order
+    const pubkeys = Buffer.compare(offer.fundingPubkey, accept.fundingPubkey) < 0
+      ? [offer.fundingPubkey, accept.fundingPubkey]
+      : [accept.fundingPubkey, offer.fundingPubkey];
+    const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys });
+
+    const oracleInfo = [{
+      publicKey: oracleAnnouncement.oraclePublicKey,
+      nonces: oracleAnnouncement.oracleEvent.oracleNonces,
+    }];
+
+    // Adaptor pairs: for enum contracts, concat encryptedSig + dleqProof into signature field
+    const adaptorSigs = accept.cetAdaptorSignatures?.sigs || accept.cetAdaptorSignatures || [];
+    const adaptorPairs = adaptorSigs.map((sig) => ({
+      signature: Buffer.concat([sig.encryptedSig, sig.dleqProof]),
+      proof: Buffer.from(''),
+    }));
+
+    const fundOutputValue = dlcTxs.fund.outputs[0].value;
+
+    const isValid = ddk.verifyCetAdaptorSigsFromOracleInfo(
+      adaptorPairs,
+      dlcTxs.cets,
+      oracleInfo,
+      accept.fundingPubkey,
+      p2ms.output,
+      fundOutputValue,
+      messagesForDdk,
+    );
 
     result.available = true;
-    result.fundTxId = singleFundedComputation.fundTxId;
-    result.cetCount = cetHexes.length;
-    result.computedContractId = `${singleFundedComputation.cidRpcTxid} (single-funded reconstruction)`;
-    result.adaptorTotalCount = cetHexes.length;
-    result.adaptorValidCount = cetHexes.length - failures.length;
-    result.adaptorValid = failures.length === 0;
-    result.refundSigValid = null;
-    result.adaptorError = failures[0] || null;
-    result.note = result.adaptorValid
-      ? `All ${result.adaptorTotalCount} CET adaptor signatures cryptographically valid`
-      : failures.join('; ');
+    result.fundTxId = fundTxId;
+    result.cetCount = dlcTxs.cets.length;
+    result.adaptorTotalCount = adaptorSigs.length;
+    result.adaptorValidCount = isValid ? adaptorSigs.length : 0;
+    result.adaptorValid = isValid;
+    result.adaptorError = isValid ? null : 'DDK verifyCetAdaptorSigsFromOracleInfo returned false';
+    result.note = isValid
+      ? `All ${result.adaptorTotalCount} CET adaptor signatures cryptographically valid (DDK)`
+      : 'Adaptor signature verification failed';
     return result;
   } catch (err) {
     result.note = `Tier 2 unavailable: ${err.message}`;
