@@ -24,6 +24,147 @@ a71c0000000175e8f015ca87424c5fd51da4c15ba8e49d0626c64e27f9a55d0c42a94285216b0000
 
 const LOCKTIME_THRESHOLD = 500000000;
 
+/**
+ * Verify a DLC offer/accept pair and return structured JSON result.
+ * @param {string} offerHex - hex-encoded DlcOffer message
+ * @param {string} acceptHex - hex-encoded DlcAccept message
+ * @returns {Promise<Object>} structured verification result
+ */
+async function verifyDlc(offerHex, acceptHex) {
+  const result = {
+    // Tier 1
+    contractType: null,
+    totalCollateral: null,
+    offerCollateral: null,
+    acceptCollateral: null,
+    outcomes: [],
+    oraclePubkey: null,
+    oracleEventId: null,
+    oracleSigValid: false,
+    oracleSigError: null,
+    cetLocktime: null,
+    refundLocktime: null,
+    feeRatePerVb: null,
+    offererFundingPubkey: null,
+    accepterFundingPubkey: null,
+    fundingAddress: null,
+    witnessScript: null,
+    offerInputs: [],
+    acceptInputs: [],
+    contractId: null,
+    // Tier 2
+    tier2Available: false,
+    tier2Note: null,
+    fundTxId: null,
+    cetCount: null,
+    adaptorValid: null,
+    adaptorValidCount: 0,
+    adaptorTotalCount: 0,
+    adaptorError: null,
+    // errors
+    error: null,
+  };
+
+  try {
+    const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
+    const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
+
+    const contract = extractContractInfo(offer.contractInfo);
+    const descriptor = contract.descriptor;
+    const oracleAnnouncement = extractOracleAnnouncement(contract.oracleInfo);
+
+    const totalCollateral = contract.totalCollateral;
+    const offerCollateral = offer.offerCollateral;
+    const acceptCollateral = accept.acceptCollateral;
+
+    const network = detectNetwork(offer.chainHash);
+    const fundingAddress = reconstructFundingAddress(offer.fundingPubkey, accept.fundingPubkey, network);
+
+    // Populate basic fields
+    result.totalCollateral = totalCollateral.toString();
+    result.offerCollateral = offerCollateral.toString();
+    result.acceptCollateral = acceptCollateral.toString();
+    result.cetLocktime = offer.cetLocktime;
+    result.refundLocktime = offer.refundLocktime;
+    result.feeRatePerVb = offer.feeRatePerVb.toString();
+    result.offererFundingPubkey = offer.fundingPubkey.toString('hex');
+    result.accepterFundingPubkey = accept.fundingPubkey.toString('hex');
+    result.fundingAddress = fundingAddress.address || null;
+    result.witnessScript = fundingAddress.witnessScriptHex;
+
+    // Contract type and outcomes
+    if (descriptor instanceof EnumeratedDescriptor) {
+      result.contractType = 'Enumerated';
+      result.outcomes = descriptor.outcomes.map((o) => ({
+        label: o.outcome,
+        offererSats: o.localPayout.toString(),
+        accepterSats: (totalCollateral - o.localPayout).toString(),
+      }));
+    } else if (descriptor instanceof NumericalDescriptor) {
+      result.contractType = `Numerical (${descriptor.numDigits} digits)`;
+    } else {
+      result.contractType = 'unknown';
+    }
+
+    // Funding inputs
+    result.offerInputs = buildFundingInputsReport(offer.fundingInputs).map((i) => ({
+      outpoint: i.outpoint,
+      sats: i.sats !== undefined ? i.sats.toString() : null,
+    }));
+    result.acceptInputs = buildFundingInputsReport(accept.fundingInputs).map((i) => ({
+      outpoint: i.outpoint,
+      sats: i.sats !== undefined ? i.sats.toString() : null,
+    }));
+
+    // Oracle info
+    result.oraclePubkey = oracleAnnouncement?.oraclePublicKey?.toString('hex') || null;
+    result.oracleEventId = oracleAnnouncement?.getEventId?.() || oracleAnnouncement?.oracleEvent?.eventId || null;
+
+    // Oracle signature verification
+    if (oracleAnnouncement) {
+      try {
+        const msg = math.taggedHash('DLC/oracle/announcement/v0', oracleAnnouncement.oracleEvent.serialize());
+        verify(oracleAnnouncement.oraclePublicKey, msg, oracleAnnouncement.announcementSig);
+        result.oracleSigValid = true;
+        result.oracleSigError = null;
+      } catch (e) {
+        result.oracleSigValid = false;
+        result.oracleSigError = e.message;
+      }
+    }
+
+    // Compute contract ID
+    const singleFundedComputation = tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress);
+    if (singleFundedComputation) {
+      result.contractId = singleFundedComputation.cidRpcTxid;
+    } else {
+      const embeddedIds = [
+        ...offer.fundingInputs.map((i) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+        ...accept.fundingInputs.map((i) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+      ];
+      if (embeddedIds.length > 0) {
+        result.contractId = embeddedIds[0];
+      }
+    }
+
+    // Tier 2 verification
+    const tier2 = await tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
+    result.tier2Available = tier2.available;
+    result.tier2Note = tier2.note || null;
+    result.fundTxId = tier2.fundTxId;
+    result.cetCount = tier2.cetCount;
+    result.adaptorValid = tier2.adaptorValid;
+    result.adaptorValidCount = tier2.adaptorValidCount;
+    result.adaptorTotalCount = tier2.adaptorTotalCount;
+    result.adaptorError = tier2.adaptorError;
+
+  } catch (err) {
+    result.error = err.message;
+  }
+
+  return result;
+}
+
 function satsToBtc(sats) {
   return (Number(sats) / 1e8).toFixed(8);
 }
@@ -625,4 +766,10 @@ async function main() {
   console.log(lines.join('\n'));
 }
 
-main();
+// Export for server usage
+module.exports = { verifyDlc };
+
+// CLI entry point
+if (require.main === module) {
+  main();
+}

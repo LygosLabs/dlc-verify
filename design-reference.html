@@ -1,0 +1,533 @@
+<html lang="en" vid="0"><head vid="1">
+    <meta charset="UTF-8" vid="2">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" vid="3">
+    <title vid="4">Bitcoin DLC Transaction Verifier</title>
+    <style vid="5">
+        :root {
+            
+            --color-primary-border: #3D64D3; 
+            --color-primary-fill: #F0F5FD;   
+            --color-primary-text: #2A4DB0;   
+            
+            --color-success: #3CA567;        
+            --color-success-bg: #EAF6EF;
+            
+            --color-danger: #DE5347;         
+            --color-danger-bg: #FCEDED;
+
+            --color-text-main: #1D1F24;      
+            --color-text-muted: #656973;     
+            
+            --color-surface: #FFFFFF;
+            --color-background: #FAFAFA;     
+            --color-border-subtle: #E6E8EB;
+            
+            --border-width-thick: 2px;       
+            --border-width-thin: 1px;
+            
+            --radius-md: 6px;                
+            --radius-sm: 4px;
+
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --font-mono: 'SFMono-Regular', Consolas, "Liberation Mono", Menlo, monospace;
+            
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 16px;
+            --space-4: 24px;
+            --space-5: 32px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--color-background);
+            color: var(--color-text-main);
+            line-height: 1.5;
+            font-size: 14px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        
+        h1, h2, h3 {
+            font-weight: 600;
+            color: var(--color-text-main);
+        }
+
+        .label {
+            font-size: 12px;
+            color: var(--color-text-muted);
+            font-weight: 500;
+        }
+        
+        .value {
+            font-size: 14px;
+            color: var(--color-text-main);
+            font-weight: 400;
+        }
+
+        .mono {
+            font-family: var(--font-mono);
+            font-size: 13px;
+        }
+
+        
+        .app-header {
+            background-color: var(--color-surface);
+            border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+            padding: var(--space-3) var(--space-4);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .logo {
+            font-weight: 600;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+        
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            border: var(--border-width-thick) solid var(--color-primary-border);
+            border-radius: var(--radius-sm);
+            background-color: var(--color-primary-fill);
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            background: var(--color-background);
+            border: var(--border-width-thick) solid var(--color-border-subtle);
+            border-radius: var(--radius-md);
+            padding: var(--space-1) var(--space-2);
+            width: 400px;
+            transition: border-color 0.2s;
+        }
+
+        .search-bar:focus-within {
+            border-color: var(--color-primary-border);
+        }
+
+        .search-bar input {
+            border: none;
+            background: transparent;
+            padding: var(--space-1);
+            width: 100%;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            outline: none;
+            color: var(--color-text-main);
+        }
+
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: var(--space-4);
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: var(--space-4);
+            align-items: start;
+        }
+
+        
+        .card {
+            background-color: var(--color-surface);
+            border-radius: var(--radius-md);
+            border: var(--border-width-thin) solid var(--color-border-subtle);
+            overflow: hidden;
+            margin-bottom: var(--space-4);
+        }
+
+        .card-header {
+            padding: var(--space-3) var(--space-4);
+            border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--color-background);
+        }
+
+        .card-header h2 {
+            font-size: 14px;
+            letter-spacing: 0.2px;
+        }
+
+        .card-body {
+            padding: var(--space-4);
+        }
+
+        
+        .status-hero {
+            background-color: var(--color-primary-fill);
+            border: var(--border-width-thick) solid var(--color-primary-border);
+            border-radius: var(--radius-md);
+            padding: var(--space-4);
+            margin-bottom: var(--space-4);
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-3);
+        }
+
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .tx-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--color-text-main);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+
+        .badge.success {
+            color: var(--color-success);
+            background-color: var(--color-success-bg);
+        }
+
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-4);
+        }
+
+        .data-pair {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-1);
+        }
+
+        
+        .measurement-line {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            font-size: 13px;
+        }
+        
+        .measurement-label {
+            color: var(--color-text-main);
+            font-weight: 500;
+        }
+
+        .measurement-value {
+            color: var(--color-text-muted);
+        }
+
+        .measurement-value.green { color: var(--color-success); }
+        .measurement-value.red { color: var(--color-danger); }
+
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th, .data-table td {
+            padding: var(--space-2) 0;
+            border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+            text-align: left;
+        }
+
+        .data-table th {
+            font-size: 12px;
+            color: var(--color-text-muted);
+            font-weight: 500;
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        
+        .tech-block {
+            background-color: var(--color-background);
+            border: var(--border-width-thin) solid var(--color-border-subtle);
+            border-radius: var(--radius-sm);
+            padding: var(--space-3);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--color-text-muted);
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .proof-step {
+            display: flex;
+            gap: var(--space-3);
+            margin-bottom: var(--space-3);
+            padding-bottom: var(--space-3);
+            border-bottom: var(--border-width-thin) dashed var(--color-border-subtle);
+        }
+
+        .proof-step:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .step-icon {
+            color: var(--color-success);
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-1);
+        }
+
+        .step-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--color-text-main);
+        }
+
+        .step-detail {
+            font-size: 12px;
+            color: var(--color-text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .oracle-card {
+            border: var(--border-width-thick) solid var(--color-border-subtle);
+            border-radius: var(--radius-md);
+            padding: var(--space-3);
+            margin-bottom: var(--space-3);
+        }
+
+        .oracle-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-2);
+        }
+
+        .copy-btn {
+            background: none;
+            border: none;
+            color: var(--color-primary-text);
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .copy-btn:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body vid="6">
+
+    <header class="app-header" vid="7">
+        <div class="logo" vid="8">
+            <div class="logo-icon" vid="9"></div>
+            DLC Verifier
+        </div>
+        <div class="search-bar" vid="10">
+            <input type="text" placeholder="Search TxID, Oracle PubKey, or Contract ID" value="f8a9...3b2c" vid="11">
+        </div>
+    </header>
+
+    <main class="main-container" vid="12">
+        
+        <div class="column-primary" vid="13">
+            
+            
+            <div class="status-hero" vid="14">
+                <div class="status-header" vid="15">
+                    <div class="tx-info" vid="16">
+                        <div class="label" style="margin-bottom: 4px;" vid="17">CONTRACT EXECUTION TRANSACTION</div>
+                        <div class="tx-title mono" vid="18">f8a9e2d1...99a03b2c</div>
+                    </div>
+                    <div class="badge success" vid="19">✓ Valid Cryptography</div>
+                </div>
+                
+                <div class="data-grid" style="margin-top: 8px;" vid="20">
+                    <div class="data-pair" vid="21">
+                        <span class="label" vid="22">Confirmed</span>
+                        <span class="value" vid="23">Block 820,491</span>
+                    </div>
+                    <div class="data-pair" vid="24">
+                        <span class="label" vid="25">Contract Outcome</span>
+                        <span class="value" style="font-weight: 500;" vid="26">Local Party Wins (0.5 BTC)</span>
+                    </div>
+                    <div class="data-pair" vid="27">
+                        <span class="label" vid="28">Fee Rate</span>
+                        <span class="value" vid="29">12.4 sat/vB</span>
+                    </div>
+                </div>
+            </div>
+
+            
+            <div class="card" vid="30">
+                <div class="card-header" vid="31">
+                    <h2 vid="32">Contract Parameters</h2>
+                </div>
+                <div class="card-body" vid="33">
+                    <div class="data-grid" vid="34">
+                        <div class="data-pair" vid="35">
+                            <span class="label" vid="36">Total Collateral</span>
+                            <span class="value" vid="37">1.00000000 BTC</span>
+                        </div>
+                        <div class="data-pair" vid="38">
+                            <span class="label" vid="39">Local Party PubKey</span>
+                            <span class="value mono" vid="40">02a1b2...c3d4</span>
+                        </div>
+                        <div class="data-pair" vid="41">
+                            <span class="label" vid="42">Remote Party PubKey</span>
+                            <span class="value mono" vid="43">03e5f6...g7h8</span>
+                        </div>
+                        <div class="data-pair" vid="44">
+                            <span class="label" vid="45">Event ID</span>
+                            <span class="value mono" vid="46">BTC_USD_20231229</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: var(--space-4);" vid="47">
+                        <div class="label" style="margin-bottom: var(--space-2);" vid="48">Payout Curve (Discretized)</div>
+                        <table class="data-table" vid="49">
+                            <thead vid="50">
+                                <tr vid="51">
+                                    <th vid="52">Event Outcome</th>
+                                    <th vid="53">Local Payout</th>
+                                    <th vid="54">Remote Payout</th>
+                                </tr>
+                            </thead>
+                            <tbody vid="55">
+                                <tr vid="56">
+                                    <td class="mono" vid="57">Price &lt; $40,000</td>
+                                    <td vid="58">0.0 BTC</td>
+                                    <td vid="59">1.0 BTC</td>
+                                </tr>
+                                <tr vid="60">
+                                    <td class="mono" vid="61">Price ≥ $40,000</td>
+                                    <td style="font-weight: 500;" vid="62">1.0 BTC</td>
+                                    <td vid="63">0.0 BTC</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            
+            <div class="card" vid="64">
+                <div class="card-header" vid="65">
+                    <h2 vid="66">Oracle Attestations</h2>
+                    <span class="label" vid="67">Threshold: 1 of 1</span>
+                </div>
+                <div class="card-body" vid="68">
+                    <div class="oracle-card" vid="69">
+                        <div class="oracle-header" vid="70">
+                            <span class="value" style="font-weight: 500;" vid="71">Suredbits Oracle</span>
+                            <span class="badge success" vid="72">Signature Valid</span>
+                        </div>
+                        <div class="data-pair" style="margin-bottom: var(--space-3);" vid="73">
+                            <span class="label" vid="74">Oracle PubKey</span>
+                            <span class="value mono" vid="75">024b434cb2c448f2bd2c4161de31c944122d2f33c061266e74f3dfd947116757b3</span>
+                        </div>
+                        
+                        
+                        <div class="measurement-line" style="margin-bottom: var(--space-2);" vid="76">
+                            <span class="measurement-label" vid="77">Attested Value:</span>
+                            <span class="measurement-value green mono" vid="78">42500</span>
+                        </div>
+                        <div class="measurement-line" vid="79">
+                            <span class="measurement-label" vid="80">Schnorr Signature:</span>
+                            <span class="measurement-value mono" style="font-size: 11px;" vid="81">1bd...8fa</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="column-sidebar" vid="82">
+            
+            <div class="card" vid="83">
+                <div class="card-header" vid="84">
+                    <h2 vid="85">Cryptographic Proofs</h2>
+                </div>
+                <div class="card-body" vid="86">
+                    
+                    <div class="proof-step" vid="87">
+                        <div class="step-icon" vid="88">✓</div>
+                        <div class="step-content" vid="89">
+                            <span class="step-title" vid="90">Oracle Signature Verification</span>
+                            <span class="step-detail" vid="91">sG = R + H(R || P || m)P</span>
+                            <span class="step-detail" style="color: var(--color-success);" vid="92">Equation balances</span>
+                        </div>
+                    </div>
+
+                    <div class="proof-step" vid="93">
+                        <div class="step-icon" vid="94">✓</div>
+                        <div class="step-content" vid="95">
+                            <span class="step-title" vid="96">CET Adaptor Signature</span>
+                            <span class="step-detail" vid="97">Validates against Oracle public key and attested value (42500).</span>
+                        </div>
+                    </div>
+
+                    <div class="proof-step" vid="98">
+                        <div class="step-icon" vid="99">✓</div>
+                        <div class="step-content" vid="100">
+                            <span class="step-title" vid="101">Funding Tx UTXO</span>
+                            <span class="step-detail" vid="102">Input 0 is unspent and matches contract multisig 2-of-2 parameters.</span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="card" vid="103">
+                <div class="card-header" vid="104">
+                    <h2 vid="105">Raw CET Hex</h2>
+                    <button class="copy-btn" vid="106">Copy</button>
+                </div>
+                <div class="card-body" vid="107">
+                    <div class="tech-block" vid="108">
+                        02000000000101d1e2a9f8...
+                        <br vid="109"><br vid="110">
+                        [Hexadecimal data truncated for display]
+                        <br vid="111"><br vid="112">
+                        ...3b2c99a000000000
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="border-color: transparent; background: transparent; padding: 0;" vid="113">
+                <div class="measurement-line" style="font-size: 11px; justify-content: flex-end;" vid="114">
+                    <span class="measurement-label" style="color: var(--color-text-muted);" vid="115">Parse time:</span>
+                    <span class="measurement-value" vid="116">14ms</span>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+
+</body></html>

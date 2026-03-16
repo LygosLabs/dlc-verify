@@ -20,6 +20,7 @@
     "bitcoin-networks": "^1.0.0",
     "bitcoinjs-lib": "^7.0.1",
     "cfd-dlc-js-wasm": "github:atomicfinance/cfd-dlc-js-wasm#v1.0.6",
-    "cfd-js-wasm": "github:atomicfinance/cfd-js-wasm#v0.4.10"
+    "cfd-js-wasm": "github:atomicfinance/cfd-js-wasm#v0.4.10",
+    "express": "^5.2.1"
   }
 }
