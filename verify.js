@@ -4,13 +4,9 @@ const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const { verify, math } = require('bip-schnorr');
 const { BitcoinNetworks, chainHashFromNetwork } = require('bitcoin-networks');
-const BitcoinCfdProvider = require('@atomicfinance/bitcoin-cfd-provider').default;
-const BitcoinDlcProvider = require('@atomicfinance/bitcoin-dlc-provider').default;
-const { BitcoinNetworks: DlcBitcoinNetworks } = require('bitcoin-network');
 const {
   DlcOffer,
   DlcAccept,
-  DlcSign,
   EnumeratedDescriptor,
   NumericalDescriptor,
   SingleOracleInfo,
@@ -263,6 +259,17 @@ function buildCetTxHexes(offer, accept, descriptor, fundTxId, fundOutputIndex) {
 }
 
 async function initCfd() {
+  try {
+    const cfd = require('cfd-js');
+    if (typeof cfd.GetSupportedFunction !== 'function') {
+      throw new Error('cfd-js missing GetSupportedFunction');
+    }
+    cfd.GetSupportedFunction({});
+    return cfd;
+  } catch (_) {
+    // fallback to WASM candidates below
+  }
+
   const candidates = [
     {
       pkgName: 'cfd-dlc-js-wasm',
@@ -344,13 +351,71 @@ async function initCfd() {
   throw lastErr || new Error('Could not initialize any supported CFD WASM module');
 }
 
-async function tryTier2(offer, accept, descriptor, fundingAddress) {
+function getCetAdaptorSigs(accept) {
+  if (Array.isArray(accept?.cetAdaptorSignatures)) return accept.cetAdaptorSignatures;
+  if (Array.isArray(accept?.cetAdaptorSignatures?.sigs)) return accept.cetAdaptorSignatures.sigs;
+  return [];
+}
+
+function getEnumOutcomeHash(outcomeText) {
+  return crypto.createHash('sha256').update(Buffer.from(outcomeText, 'utf8')).digest('hex');
+}
+
+function verifySingleCetAdaptorSig({
+  cfd,
+  encryptedSigHex,
+  oracleAdaptorPointHex,
+  counterpartyFundingPubkeyHex,
+  fundingWitnessScriptHex,
+  cetHex,
+  fundInputAmount,
+}) {
+  if (encryptedSigHex.length !== 130) {
+    throw new Error(`encryptedSig must be 65 bytes, got ${encryptedSigHex.length / 2}`);
+  }
+
+  const adaptorNonceR = encryptedSigHex.slice(0, 66);
+  const adaptorScalarS = encryptedSigHex.slice(66);
+  const combinedNonce = cfd.CombinePubkey({ pubkeys: [adaptorNonceR, oracleAdaptorPointHex] }).pubkey;
+  const combinedNonceSchnorr = cfd.GetSchnorrPubkeyFromPubkey({ pubkey: combinedNonce }).pubkey;
+  const counterpartySchnorrPubkey = cfd.GetSchnorrPubkeyFromPubkey({
+    pubkey: counterpartyFundingPubkeyHex,
+  }).pubkey;
+
+  const cetTx = bitcoin.Transaction.fromHex(cetHex);
+  const sighash = Buffer.from(
+    cetTx.hashForWitnessV0(
+      0,
+      Buffer.from(fundingWitnessScriptHex, 'hex'),
+      fundInputAmount,
+      bitcoin.Transaction.SIGHASH_ALL,
+    ),
+  ).toString('hex');
+
+  const rhs = cfd.ComputeSigPointSchnorrPubkey({
+    schnorrPubkey: counterpartySchnorrPubkey,
+    nonce: combinedNonceSchnorr,
+    message: sighash,
+    isHashed: true,
+  }).pubkey;
+
+  const lhs = cfd.GetPubkeyFromPrivkey({
+    privkey: adaptorScalarS,
+    isCompressed: true,
+  }).pubkey;
+
+  return lhs === rhs;
+}
+
+async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement) {
   const result = {
     available: false,
     note: '',
     fundTxId: null,
     cetCount: null,
     adaptorValid: null,
+    adaptorValidCount: 0,
+    adaptorTotalCount: 0,
     adaptorError: null,
     refundSigValid: null,
     computedContractId: null,
@@ -358,47 +423,76 @@ async function tryTier2(offer, accept, descriptor, fundingAddress) {
 
   try {
     const cfd = await initCfd();
-    const cfdProvider = new BitcoinCfdProvider(cfd);
-    await cfdProvider.GetSupportedFunction();
-
-    const detected = detectNetwork(offer.chainHash);
-    const dlcNetwork = DlcBitcoinNetworks[detected.name] || DlcBitcoinNetworks.bitcoin_regtest;
-    const dlcProvider = new BitcoinDlcProvider(dlcNetwork, cfdProvider);
-
-    const { dlcTransactions, messagesList } = await dlcProvider.createDlcTxs(offer, accept);
-    const verifyCetAdaptorAndRefundSigs =
-      dlcProvider.VerifyCetAdaptorAndRefundSigs || dlcProvider['VerifyCetAdaptorAndRefundSigs'];
-    if (typeof verifyCetAdaptorAndRefundSigs !== 'function') {
-      throw new Error('BitcoinDlcProvider.VerifyCetAdaptorAndRefundSigs is not callable');
+    if (!(descriptor instanceof EnumeratedDescriptor)) {
+      throw new Error('Tier 2 currently supports EnumeratedDescriptor contracts only');
     }
 
-    try {
-      await verifyCetAdaptorAndRefundSigs.call(
-        dlcProvider,
-        offer,
-        accept,
-        new DlcSign(),
-        dlcTransactions,
-        messagesList,
-        true,
+    if (!oracleAnnouncement?.oraclePublicKey || !oracleAnnouncement?.oracleEvent?.oracleNonces?.length) {
+      throw new Error('Missing oracle announcement pubkey/nonce for adaptor verification');
+    }
+
+    const adaptorSigs = getCetAdaptorSigs(accept);
+    const singleFundedComputation = tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress);
+    if (!singleFundedComputation) {
+      throw new Error('Could not reconstruct funding outpoint required for CET sighashes');
+    }
+
+    const cetHexes = buildCetTxHexes(
+      offer,
+      accept,
+      descriptor,
+      singleFundedComputation.fundTxId,
+      singleFundedComputation.fundOutputIndex,
+    );
+    if (cetHexes.length !== adaptorSigs.length) {
+      throw new Error(
+        `CET/signature count mismatch: ${cetHexes.length} CETs vs ${adaptorSigs.length} adaptor signatures`,
       );
-      result.adaptorValid = true;
-      result.refundSigValid = true;
-    } catch (verifyErr) {
-      result.adaptorValid = false;
-      result.refundSigValid = false;
-      result.adaptorError = verifyErr.message;
+    }
+
+    const counterpartyFundingPubkeyHex = accept.fundingPubkey.toString('hex');
+    const oracleSchnorrPubkey = oracleAnnouncement.oraclePublicKey.toString('hex');
+    const oracleNonce = oracleAnnouncement.oracleEvent.oracleNonces[0].toString('hex');
+
+    const failures = [];
+    for (let i = 0; i < cetHexes.length; i++) {
+      const outcome = descriptor.outcomes[i];
+      const outcomeMessageHash = getEnumOutcomeHash(outcome.outcome);
+      const oracleAdaptorPoint = cfd.ComputeSigPointSchnorrPubkey({
+        schnorrPubkey: oracleSchnorrPubkey,
+        nonce: oracleNonce,
+        message: outcomeMessageHash,
+        isHashed: true,
+      }).pubkey;
+
+      const encryptedSigHex = adaptorSigs[i].encryptedSig.toString('hex');
+      const valid = verifySingleCetAdaptorSig({
+        cfd,
+        encryptedSigHex,
+        oracleAdaptorPointHex: oracleAdaptorPoint,
+        counterpartyFundingPubkeyHex,
+        fundingWitnessScriptHex: fundingAddress.witnessScriptHex,
+        cetHex: cetHexes[i],
+        fundInputAmount: offer.contractInfo.totalCollateral,
+      });
+
+      if (!valid) {
+        failures.push(`CET #${i} (${outcome.outcome}) failed Schnorr adaptor equation`);
+      }
     }
 
     result.available = true;
-    result.fundTxId = dlcTransactions.fundTx.txId.toString();
-    result.cetCount = dlcTransactions.cets.length;
-    result.computedContractId = dlcTransactions.contractId
-      ? `${dlcTransactions.contractId.toString('hex')} (from createDlcTxs)`
-      : null;
+    result.fundTxId = singleFundedComputation.fundTxId;
+    result.cetCount = cetHexes.length;
+    result.computedContractId = `${singleFundedComputation.cidRpcTxid} (single-funded reconstruction)`;
+    result.adaptorTotalCount = cetHexes.length;
+    result.adaptorValidCount = cetHexes.length - failures.length;
+    result.adaptorValid = failures.length === 0;
+    result.refundSigValid = null;
+    result.adaptorError = failures[0] || null;
     result.note = result.adaptorValid
-      ? 'Tier 2 cryptographic verification completed via BitcoinDlcProvider.VerifyCetAdaptorAndRefundSigs.'
-      : 'Tier 2 cryptographic verification failed.';
+      ? `All ${result.adaptorTotalCount} CET adaptor signatures cryptographically valid`
+      : failures.join('; ');
     return result;
   } catch (err) {
     result.note = `Tier 2 unavailable: ${err.message}`;
@@ -455,7 +549,7 @@ async function main() {
     }
   }
 
-  const tier2 = await tryTier2(offer, accept, descriptor, fundingAddress);
+  const tier2 = await tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
   const singleFundedComputation = tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress);
 
   let computedContractId = 'n/a';
@@ -529,10 +623,14 @@ async function main() {
   if (tier2.available) {
     if (tier2.fundTxId) lines.push(`  Fund TX ID: ${tier2.fundTxId}`);
     if (tier2.cetCount !== null) lines.push(`  CET count: ${tier2.cetCount}`);
-    if (tier2.adaptorValid === true) lines.push('  Adaptor signatures: CRYPTOGRAPHICALLY VALID');
+    if (tier2.adaptorValid === true) {
+      lines.push(
+        `  CET adaptor signatures: CRYPTOGRAPHICALLY VALID (${tier2.adaptorValidCount}/${tier2.adaptorTotalCount})`,
+      );
+    }
     if (tier2.adaptorValid === false) {
       lines.push(
-        `  Adaptor signatures: CRYPTOGRAPHICALLY INVALID${tier2.adaptorError ? ` (${tier2.adaptorError})` : ''}`,
+        `  CET adaptor signatures: CRYPTOGRAPHICALLY INVALID (${tier2.adaptorValidCount}/${tier2.adaptorTotalCount})${tier2.adaptorError ? ` - ${tier2.adaptorError}` : ''}`,
       );
     }
     if (tier2.refundSigValid === true) lines.push('  Refund signature: CRYPTOGRAPHICALLY VALID');
