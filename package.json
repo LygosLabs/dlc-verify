@@ -15,6 +15,7 @@
     "@atomicfinance/bitcoin-cfd-provider": "^4.2.7",
     "@atomicfinance/bitcoin-dlc-provider": "^4.2.7",
     "@atomicfinance/client": "^4.2.7",
+    "@bennyblader/ddk-ts": "^0.3.35",
     "@node-dlc/messaging": "^1.1.7",
     "bitcoin-networks": "^1.0.0",
     "bitcoinjs-lib": "^7.0.1",
