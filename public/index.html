@@ -3,592 +3,233 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DLC Verifier</title>
+    <title>DLC Verify</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: {
+                        'card': '4px',
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        :root {
-            --color-primary-border: #3D64D3;
-            --color-primary-fill: #F0F5FD;
-            --color-primary-text: #2A4DB0;
-
-            --color-success: #3CA567;
-            --color-success-bg: #EAF6EF;
-
-            --color-danger: #DE5347;
-            --color-danger-bg: #FCEDED;
-
-            --color-text-main: #1D1F24;
-            --color-text-muted: #656973;
-
-            --color-surface: #FFFFFF;
-            --color-background: #FAFAFA;
-            --color-border-subtle: #E6E8EB;
-
-            --border-width-thick: 2px;
-            --border-width-thin: 1px;
-
-            --radius-md: 6px;
-            --radius-sm: 4px;
-
-            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            --font-mono: 'SFMono-Regular', Consolas, "Liberation Mono", Menlo, monospace;
-
-            --space-1: 4px;
-            --space-2: 8px;
-            --space-3: 16px;
-            --space-4: 24px;
-            --space-5: 32px;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: var(--font-sans);
-            background-color: var(--color-background);
-            color: var(--color-text-main);
-            line-height: 1.5;
-            font-size: 14px;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        h1, h2, h3 {
-            font-weight: 600;
-            color: var(--color-text-main);
-        }
-
-        .label {
-            font-size: 12px;
-            color: var(--color-text-muted);
-            font-weight: 500;
-        }
-
-        .value {
-            font-size: 14px;
-            color: var(--color-text-main);
-            font-weight: 400;
-        }
-
-        .mono {
-            font-family: var(--font-mono);
-            font-size: 13px;
-        }
-
-        .app-header {
-            background-color: var(--color-surface);
-            border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
-            padding: var(--space-3) var(--space-4);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
-        .logo {
-            font-weight: 600;
-            font-size: 16px;
-            display: flex;
-            align-items: center;
-            gap: var(--space-2);
-        }
-
-        .logo-icon {
-            width: 24px;
-            height: 24px;
-            border: var(--border-width-thick) solid var(--color-primary-border);
-            border-radius: var(--radius-sm);
-            background-color: var(--color-primary-fill);
-        }
-
-        .main-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: var(--space-4);
-        }
-
-        .results-container {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: var(--space-4);
-            align-items: start;
-        }
-
-        .card {
-            background-color: var(--color-surface);
-            border-radius: var(--radius-md);
-            border: var(--border-width-thin) solid var(--color-border-subtle);
-            overflow: hidden;
-            margin-bottom: var(--space-4);
-        }
-
-        .card-header {
-            padding: var(--space-3) var(--space-4);
-            border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background-color: var(--color-background);
-        }
-
-        .card-header h2 {
-            font-size: 14px;
-            letter-spacing: 0.2px;
-        }
-
-        .card-body {
-            padding: var(--space-4);
-        }
-
-        .status-hero {
-            background-color: var(--color-primary-fill);
-            border: var(--border-width-thick) solid var(--color-primary-border);
-            border-radius: var(--radius-md);
-            padding: var(--space-4);
-            margin-bottom: var(--space-4);
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-3);
-        }
-
-        .status-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-        }
-
-        .tx-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: var(--color-text-main);
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 2px 8px;
-            border-radius: var(--radius-sm);
-            font-size: 12px;
-            font-weight: 500;
-            letter-spacing: 0.3px;
-        }
-
-        .badge.success {
-            color: var(--color-success);
-            background-color: var(--color-success-bg);
-        }
-
-        .badge.danger {
-            color: var(--color-danger);
-            background-color: var(--color-danger-bg);
-        }
-
-        .badge.large {
-            font-size: 16px;
-            padding: 8px 16px;
-        }
-
-        .data-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: var(--space-4);
-        }
-
-        .data-pair {
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-1);
-        }
-
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .data-table th, .data-table td {
-            padding: var(--space-2) 0;
-            border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
-            text-align: left;
-        }
-
-        .data-table th {
-            font-size: 12px;
-            color: var(--color-text-muted);
-            font-weight: 500;
-        }
-
-        .data-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        .tech-block {
-            background-color: var(--color-background);
-            border: var(--border-width-thin) solid var(--color-border-subtle);
-            border-radius: var(--radius-sm);
-            padding: var(--space-3);
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--color-text-muted);
-            word-break: break-all;
-            line-height: 1.4;
-            position: relative;
-        }
-
-        .proof-step {
-            display: flex;
-            gap: var(--space-3);
-            margin-bottom: var(--space-3);
-            padding-bottom: var(--space-3);
-            border-bottom: var(--border-width-thin) dashed var(--color-border-subtle);
-        }
-
-        .proof-step:last-child {
-            margin-bottom: 0;
-            padding-bottom: 0;
-            border-bottom: none;
-        }
-
-        .step-icon {
-            font-weight: bold;
-            flex-shrink: 0;
-        }
-
-        .step-icon.success {
-            color: var(--color-success);
-        }
-
-        .step-icon.danger {
-            color: var(--color-danger);
-        }
-
-        .step-content {
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-1);
-        }
-
-        .step-title {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--color-text-main);
-        }
-
-        .step-detail {
-            font-size: 12px;
-            color: var(--color-text-muted);
-            font-family: var(--font-mono);
-        }
-
-        .oracle-card {
-            border: var(--border-width-thick) solid var(--color-border-subtle);
-            border-radius: var(--radius-md);
-            padding: var(--space-3);
-            margin-bottom: var(--space-3);
-        }
-
-        .oracle-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: var(--space-2);
-        }
-
-        .copy-btn {
-            background: none;
-            border: none;
-            color: var(--color-primary-text);
-            font-size: 12px;
+        .copy-trigger {
             cursor: pointer;
-            font-weight: 500;
+            transition: all 0.15s ease-in-out;
         }
-
-        .copy-btn:hover {
-            text-decoration: underline;
+        .copy-trigger:hover {
+            background-color: #eff6ff;
         }
-
-        /* Input state styles */
-        .input-section {
-            max-width: 800px;
-            margin: 0 auto;
+        .copy-trigger:hover .copy-text {
+            color: #1d4ed8;
         }
-
-        .input-card {
-            background-color: var(--color-surface);
-            border-radius: var(--radius-md);
-            border: var(--border-width-thin) solid var(--color-border-subtle);
-            padding: var(--space-4);
-            margin-bottom: var(--space-4);
+        .copy-trigger:hover .copy-icon {
+            opacity: 1;
+            color: #2563eb;
         }
-
-        .input-card h2 {
-            margin-bottom: var(--space-3);
-        }
-
-        .input-group {
-            margin-bottom: var(--space-4);
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: var(--space-2);
-            font-weight: 500;
-            font-size: 13px;
-        }
-
-        .input-group textarea {
-            width: 100%;
-            min-height: 120px;
-            padding: var(--space-3);
-            border: var(--border-width-thick) solid var(--color-border-subtle);
-            border-radius: var(--radius-md);
-            font-family: var(--font-mono);
-            font-size: 12px;
-            resize: vertical;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .input-group textarea:focus {
-            border-color: var(--color-primary-border);
-        }
-
-        .btn {
-            padding: var(--space-2) var(--space-4);
-            border-radius: var(--radius-md);
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background-color: var(--color-primary-border);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background-color: var(--color-primary-text);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            background-color: var(--color-background);
-            color: var(--color-text-main);
-            border: var(--border-width-thin) solid var(--color-border-subtle);
-        }
-
-        .btn-secondary:hover {
-            border-color: var(--color-primary-border);
-        }
-
-        .btn-row {
-            display: flex;
-            gap: var(--space-3);
-            justify-content: flex-end;
-        }
-
-        /* Loading state */
-        .loading-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.9);
-            z-index: 100;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            gap: var(--space-3);
-        }
-
-        .loading-overlay.active {
-            display: flex;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--color-border-subtle);
-            border-top-color: var(--color-primary-border);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        .truncated {
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .error-message {
-            background-color: var(--color-danger-bg);
-            border: var(--border-width-thin) solid var(--color-danger);
-            border-radius: var(--radius-md);
-            padding: var(--space-3);
-            color: var(--color-danger);
-            margin-bottom: var(--space-4);
+        .copy-icon.copied {
+            opacity: 1;
+            color: #16a34a;
         }
     </style>
 </head>
-<body>
+<body class="bg-gray-50 text-gray-900 font-sans min-h-screen w-full flex flex-col antialiased">
 
-    <header class="app-header">
-        <div class="logo">
-            <div class="logo-icon"></div>
-            DLC Verifier
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-gray-900 text-white rounded-sm flex items-center justify-center font-mono font-bold text-lg">D</div>
+            <span class="font-semibold text-gray-900 tracking-tight">DLC Verify</span>
+        </div>
+        <div id="headerEditBtn" class="hidden">
+            <button class="text-blue-600 hover:text-blue-700 font-medium text-sm" onclick="resetToInput()">Verify Another</button>
         </div>
     </header>
 
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-        <span>Verifying DLC...</span>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="hidden fixed inset-0 bg-white/90 z-[100] flex items-center justify-center flex-col gap-3">
+        <div class="w-10 h-10 border-3 border-gray-200 border-t-blue-600 rounded-full animate-spin" style="border-width: 3px;"></div>
+        <span class="text-sm text-gray-500">Verifying DLC...</span>
     </div>
 
-    <main class="main-container">
-        <!-- Input State -->
-        <div class="input-section" id="inputSection">
-            <div class="input-card">
-                <h2>Verify DLC Contract</h2>
-                <p class="label" style="margin-bottom: var(--space-4);">
-                    Paste the offer and accept hex messages to verify the DLC contract cryptographically.
-                </p>
+    <main class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-                <div class="input-group">
-                    <label for="offerHex">Offer Hex</label>
-                    <textarea id="offerHex" placeholder="Paste DLC offer hex..."></textarea>
+        <!-- Input Section -->
+        <div id="inputSection" class="max-w-2xl mx-auto">
+            <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                <div class="bg-gray-50 border-b border-gray-200 px-6 py-4">
+                    <h2 class="font-semibold text-gray-900">Verify DLC Contract</h2>
                 </div>
+                <div class="p-6">
+                    <p class="text-sm text-gray-500 mb-6">Paste the offer and accept hex messages to verify the DLC contract cryptographically.</p>
 
-                <div class="input-group">
-                    <label for="acceptHex">Accept Hex</label>
-                    <textarea id="acceptHex" placeholder="Paste DLC accept hex..."></textarea>
-                </div>
+                    <div class="mb-5">
+                        <label for="offerHex" class="block text-sm font-medium text-gray-700 mb-2">Offer Hex</label>
+                        <textarea id="offerHex" class="w-full min-h-[120px] p-3 border-2 border-gray-200 rounded-card font-mono text-xs resize-y outline-none focus:border-blue-500 transition-colors" placeholder="Paste DLC offer hex..."></textarea>
+                    </div>
 
-                <div class="btn-row">
-                    <button class="btn btn-primary" id="verifyBtn" onclick="doVerify()">Verify</button>
+                    <div class="mb-6">
+                        <label for="acceptHex" class="block text-sm font-medium text-gray-700 mb-2">Accept Hex</label>
+                        <textarea id="acceptHex" class="w-full min-h-[120px] p-3 border-2 border-gray-200 rounded-card font-mono text-xs resize-y outline-none focus:border-blue-500 transition-colors" placeholder="Paste DLC accept hex..."></textarea>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button id="verifyBtn" class="bg-gray-900 hover:bg-gray-800 text-white px-6 py-2 rounded-card text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed" onclick="doVerify()">Verify</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Results State -->
-        <div class="results-container hidden" id="resultsSection">
-            <div class="column-primary">
-                <!-- Error message -->
-                <div class="error-message hidden" id="errorMessage"></div>
+        <!-- Results Section -->
+        <div id="resultsSection" class="hidden flex flex-col lg:flex-row gap-6 items-start">
+
+            <!-- Main Column -->
+            <div class="flex-1 w-full min-w-0 space-y-6">
+
+                <!-- Error -->
+                <div id="errorMessage" class="hidden bg-red-50 border border-red-200 rounded-card p-4 text-red-700 text-sm"></div>
 
                 <!-- Status Hero -->
-                <div class="status-hero">
-                    <div class="status-header">
-                        <div class="tx-info">
-                            <div class="label" style="margin-bottom: 4px;">DLC CONTRACT</div>
-                            <div class="tx-title" id="contractTypeDisplay">Enumerated Contract</div>
-                        </div>
-                        <div id="validityBadge" class="badge success large">Valid</div>
-                    </div>
+                <div class="bg-blue-50 border-2 border-blue-600 rounded-card p-6 relative overflow-hidden">
+                    <div class="relative z-10 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div>
+                            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">DLC Contract</div>
+                            <h1 id="contractTypeDisplay" class="text-xl font-semibold text-gray-900 mb-5">Enumerated Contract</h1>
 
-                    <div class="data-grid" style="margin-top: 8px;">
-                        <div class="data-pair">
-                            <span class="label">Total Collateral</span>
-                            <span class="value" id="totalCollateralDisplay">0 sats</span>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <span class="text-xs text-gray-500 block">Total Collateral</span>
+                                    <span id="totalCollateralDisplay" class="font-mono text-sm font-medium text-gray-900">-</span>
+                                </div>
+                                <div>
+                                    <span class="text-xs text-gray-500 block">Offerer Collateral</span>
+                                    <span id="offerCollateralDisplay" class="font-mono text-sm text-gray-900">-</span>
+                                </div>
+                                <div>
+                                    <span class="text-xs text-gray-500 block">Accepter Collateral</span>
+                                    <span id="acceptCollateralDisplay" class="font-mono text-sm text-gray-900">-</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="data-pair">
-                            <span class="label">Offerer Collateral</span>
-                            <span class="value" id="offerCollateralDisplay">0 sats</span>
-                        </div>
-                        <div class="data-pair">
-                            <span class="label">Accepter Collateral</span>
-                            <span class="value" id="acceptCollateralDisplay">0 sats</span>
+
+                        <div id="validityBadge" class="inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start">
+                            <i class="ph-fill ph-check-circle text-green-600 text-lg"></i>
+                            Valid Cryptography
                         </div>
                     </div>
                 </div>
 
                 <!-- Contract Parameters -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Contract Parameters</h2>
+                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 px-6 py-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Contract Parameters</h3>
                     </div>
-                    <div class="card-body">
-                        <div class="data-grid">
-                            <div class="data-pair">
-                                <span class="label">Fee Rate</span>
-                                <span class="value" id="feeRateDisplay">0 sat/vB</span>
+                    <div class="p-6">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Fee Rate</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group" data-copy="">
+                                    <span id="feeRateDisplay" class="copy-text font-mono text-sm text-gray-900 transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1 text-gray-400 opacity-0 transition-opacity"></i>
+                                </div>
                             </div>
-                            <div class="data-pair">
-                                <span class="label">CET Locktime</span>
-                                <span class="value" id="cetLocktimeDisplay">-</span>
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">CET Locktime</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group" data-copy="">
+                                    <span id="cetLocktimeDisplay" class="copy-text font-mono text-sm text-gray-900 transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1 text-gray-400 opacity-0 transition-opacity"></i>
+                                </div>
                             </div>
-                            <div class="data-pair">
-                                <span class="label">Refund Locktime</span>
-                                <span class="value" id="refundLocktimeDisplay">-</span>
-                            </div>
-                            <div class="data-pair">
-                                <span class="label">Offerer Funding Pubkey</span>
-                                <span class="value mono truncated" id="offererPubkeyDisplay">-</span>
-                            </div>
-                            <div class="data-pair">
-                                <span class="label">Accepter Funding Pubkey</span>
-                                <span class="value mono truncated" id="accepterPubkeyDisplay">-</span>
-                            </div>
-                            <div class="data-pair">
-                                <span class="label">Oracle Event ID</span>
-                                <span class="value mono truncated" id="oracleEventIdDisplay">-</span>
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Refund Locktime</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group" data-copy="">
+                                    <span id="refundLocktimeDisplay" class="copy-text font-mono text-sm text-gray-900 transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1 text-gray-400 opacity-0 transition-opacity"></i>
+                                </div>
                             </div>
                         </div>
 
-                        <div style="margin-top: var(--space-4);">
-                            <div class="label" style="margin-bottom: var(--space-2);">Outcome Payouts</div>
-                            <table class="data-table" id="outcomesTable">
-                                <thead>
-                                    <tr>
-                                        <th>Outcome</th>
-                                        <th>Offerer Payout</th>
-                                        <th>Accepter Payout</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="outcomesTableBody">
-                                </tbody>
-                            </table>
+                        <div class="border-t border-gray-100 mt-5 pt-5 space-y-4">
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Offerer Funding Pubkey</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group max-w-full" data-copy="">
+                                    <span id="offererPubkeyDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1.5 text-gray-400 opacity-0 transition-opacity shrink-0"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Accepter Funding Pubkey</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group max-w-full" data-copy="">
+                                    <span id="accepterPubkeyDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1.5 text-gray-400 opacity-0 transition-opacity shrink-0"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Oracle Event ID</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group max-w-full" data-copy="">
+                                    <span id="oracleEventIdDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1.5 text-gray-400 opacity-0 transition-opacity shrink-0"></i>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Oracle Card -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Oracle</h2>
-                        <span class="label">Threshold: 1 of 1</span>
+                <!-- Outcome Payouts -->
+                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 px-6 py-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Outcome Payouts</h3>
                     </div>
-                    <div class="card-body">
-                        <div class="oracle-card">
-                            <div class="oracle-header">
-                                <span class="value" style="font-weight: 500;">Oracle Attestation</span>
-                                <span id="oracleSigBadge" class="badge success">Signature Valid</span>
+                    <div class="p-6">
+                        <div id="outcomesTree" class="space-y-4">
+                            <!-- Outcomes injected here by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Oracle Data -->
+                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 px-6 py-3 flex justify-between items-center">
+                        <h3 class="text-sm font-semibold text-gray-900">Oracle Data</h3>
+                        <div id="oracleSigBadge" class="inline-flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-card text-xs font-medium">
+                            <i class="ph-fill ph-shield-check text-green-600 text-sm"></i>
+                            Announcement Sig Valid
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Oracle Event ID</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group" data-copy="">
+                                    <span id="oracleEventIdDisplay2" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1 text-gray-400 opacity-0 transition-opacity shrink-0"></i>
+                                </div>
                             </div>
-                            <div class="data-pair" style="margin-bottom: var(--space-3);">
-                                <span class="label">Oracle PubKey</span>
-                                <span class="value mono" style="word-break: break-all;" id="oraclePubkeyDisplay">-</span>
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Maturity Date</div>
+                                <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group" data-copy="">
+                                    <span id="maturityDateDisplay" class="copy-text font-mono text-sm text-gray-900 transition-colors">-</span>
+                                    <i class="ph ph-copy copy-icon ml-1 text-gray-400 opacity-0 transition-opacity"></i>
+                                </div>
                             </div>
-                            <div class="data-pair">
-                                <span class="label">Event ID</span>
-                                <span class="value mono" id="oracleEventIdDisplay2">-</span>
+                        </div>
+                        <div class="mt-5">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Oracle Pubkey</div>
+                            <div class="copy-trigger inline-flex items-center rounded-sm -ml-1 px-1 py-0.5 group max-w-full" data-copy="">
+                                <span id="oraclePubkeyDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors">-</span>
+                                <i class="ph ph-copy copy-icon ml-1.5 text-gray-400 opacity-0 transition-opacity shrink-0"></i>
                             </div>
                         </div>
                     </div>
@@ -596,83 +237,98 @@
             </div>
 
             <!-- Sidebar -->
-            <div class="column-sidebar">
+            <div class="w-full lg:w-80 space-y-6 shrink-0">
+
                 <!-- Cryptographic Proofs -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Cryptographic Proofs</h2>
+                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 px-5 py-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Cryptographic Proofs</h3>
                     </div>
-                    <div class="card-body">
-                        <div class="proof-step">
-                            <div class="step-icon" id="oracleSigIcon">-</div>
-                            <div class="step-content">
-                                <span class="step-title">Oracle Announcement Signature</span>
-                                <span class="step-detail" id="oracleSigDetail">Checking...</span>
-                            </div>
-                        </div>
+                    <div class="p-5">
+                        <ul class="space-y-5 relative">
+                            <div class="absolute left-[11px] top-2 bottom-6 w-0.5 bg-gray-100 z-0"></div>
 
-                        <div class="proof-step">
-                            <div class="step-icon" id="fundTxIcon">-</div>
-                            <div class="step-content">
-                                <span class="step-title">Fund TX Reconstruction</span>
-                                <span class="step-detail" id="fundTxDetail">-</span>
-                            </div>
-                        </div>
+                            <li class="relative z-10 flex gap-3 items-start">
+                                <div id="oracleSigIconWrap" class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white">
+                                    <i id="oracleSigIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium text-gray-900">Oracle Announcement Sig</h4>
+                                    <p id="oracleSigDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">Checking...</p>
+                                </div>
+                            </li>
 
-                        <div class="proof-step">
-                            <div class="step-icon" id="adaptorSigIcon">-</div>
-                            <div class="step-content">
-                                <span class="step-title">CET Adaptor Signatures</span>
-                                <span class="step-detail" id="adaptorSigDetail">-</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                            <li class="relative z-10 flex gap-3 items-start">
+                                <div id="fundTxIconWrap" class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white">
+                                    <i id="fundTxIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium text-gray-900">Fund TX Reconstruction</h4>
+                                    <p id="fundTxDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
+                                </div>
+                            </li>
 
-                <!-- Contract IDs -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Contract IDs</h2>
-                    </div>
-                    <div class="card-body">
-                        <div class="data-pair" style="margin-bottom: var(--space-3);">
-                            <span class="label">Contract ID</span>
-                            <div class="tech-block" id="contractIdDisplay">-</div>
-                        </div>
-                        <div class="data-pair" style="margin-bottom: var(--space-3);">
-                            <span class="label">Fund TX ID</span>
-                            <div class="tech-block" id="fundTxIdDisplay">-</div>
-                        </div>
-                        <div class="data-pair" style="margin-bottom: var(--space-3);">
-                            <span class="label">Funding Address</span>
-                            <div class="tech-block">
-                                <span id="fundingAddressDisplay">-</span>
-                                <button class="copy-btn" style="position: absolute; right: 8px; top: 8px;" onclick="copyToClipboard('fundingAddressDisplay')">Copy</button>
-                            </div>
-                        </div>
-                        <div class="data-pair">
-                            <span class="label">Witness Script</span>
-                            <div class="tech-block">
-                                <span id="witnessScriptDisplay" class="truncated" style="display: block;">-</span>
-                                <button class="copy-btn" style="position: absolute; right: 8px; top: 8px;" onclick="copyToClipboard('witnessScriptDisplay')">Copy</button>
-                            </div>
-                        </div>
+                            <li class="relative z-10 flex gap-3 items-start">
+                                <div id="adaptorSigIconWrap" class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white">
+                                    <i id="adaptorSigIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium text-gray-900">CET Adaptor Signatures</h4>
+                                    <p id="adaptorSigDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
+                                </div>
+                            </li>
+                        </ul>
                     </div>
                 </div>
 
-                <div class="btn-row" style="justify-content: center;">
-                    <button class="btn btn-secondary" onclick="resetToInput()">Verify Another</button>
+                <!-- Identifiers & Scripts -->
+                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 px-5 py-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Identifiers & Scripts</h3>
+                    </div>
+                    <div class="p-5 space-y-4">
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Contract ID</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="contractIdDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Fund TX ID</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="fundTxIdDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Funding Address</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="fundingAddressDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5 flex justify-between items-center">
+                                Witness Script
+                                <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-sm font-medium">2-of-2</span>
+                            </div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="witnessScriptDisplay" class="copy-text font-mono text-xs text-gray-600 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
     <script>
-        // Sample data from examples/loan-matured-7932e4c2.json
+        // Sample data
         const SAMPLE_OFFER = "a71a000000010006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f75e8f015ca87424c5fd51da4c15ba8e49d0626c64e27f9a55d0c42a94285216b000000000000004e200004086e6f742d706169640000000000004e20067265706169640000000000004e201d6c6971756964617465642d62792d6d617475726174696f6e2d6461746500000000000000001d6c6971756964617465642d62792d70726963652d7468726573686f6c64000000000000000000fdd824fd012a18c141dd421bb8c54e2965f964b9c53c30e2f8c288e84684d2da313fb314a16b3a739b951ab043c9a9b012c972c542ec4533cbab53ae597ff7b1cbd2b57e26dd8731249d979def2d5d76c61795969e953807d37ff36ef8dbab60d57ae08bb004fdd822c60001aaf6f439e22ebc287b0b72e45d62c2a6fc10392bd6e67b0fed7a5c0623cd909869ca9e00fdd8064e0004086e6f742d70616964067265706169641d6c6971756964617465642d62792d6d617475726174696f6e2d646174651d6c6971756964617465642d62792d70726963652d7468726573686f6c644d6c6f616e2d6d6174757265642d37393332653463326635313336636133643833653530373938373662643139333131626236316462336534306533323865346531386333386362316433343532036eb76057911e044f21ff936e44d559e50e8205115b398873663062978d59ca5300160014c4c19bd65e8e01887b4233d3d00aeba814e32e700000000000002e6c0000000000004e2001000000000000f93beb02000000000101e39ded02db3a29b96516add32332f14a90564b5003c69b019007127caa0984780100000000ffffffff026c5000000000000022002094dc89c4908b2b6e77240a7aef9bf348305ef5747eb9295e72dd9f84b61ce030c6d2120000000000160014a1ce41748ea25502e2b8a96b9f355d9f127d6650024830450221008adea390dbe7eed07f75e658c09796bce58a20d055613a012fcf52bacf38f2f90220708568036845fff6dac50103141b64dfa1fa5d9d399861f18ff4357e1fb4419001210384c27feb59925d4fab7a109e819359593a4024805a8aaddb2e36eefbe50f2a2b0000000000000001ffffffff006c000000001600140aaf7cb8008f5ad8869e13f47f490d4cc1e2870a00000000004f3700000000000005069e00000000000000036954661469d3d880";
         const SAMPLE_ACCEPT = "a71c0000000175e8f015ca87424c5fd51da4c15ba8e49d0626c64e27f9a55d0c42a94285216b000000000000000003903300005c2442e25c16cc27491e27cac1f694873c66f3754290be363909378c001600146ca95318f13155e107ecaee89be880f614885154f9ba97c4a58d90c200001600146ca95318f13155e107ecaee89be880f61488515420ce87964a55e5520402d6976bff43f6db838aee8b7fe8bd3fa9e2c4d1c93cd713ba3f17a13230c6067403175812ef0fcf9577c3ded949c35269c2fb1d366708e03c4edd2e2bb3943e40b26048bf4f26e6cae095802ae112b1296ec9a13831f445b37081c362c4aa3542dbdfa78a978a17d7b8bd183ec83220d9714d584ce2d4a2cff316bfdc49681781e00b1cee98438bd63ecc6f225fcd7c9cfabe0ba98af13609112547f6d67ab30c4e02966e83473db580ddbabc8fda1d62074b08d823aee5e3013430449e2ebf3dd48903929a9152dec88ff9c1cd459554255c0d7f6862f8060c40520b74555afaedeb9a6567a37882ac4f5f3ed6ef194e74ceda88fde0e2d90423115b77459a880b6615004b50141972be52af0a569afe8014d87efdf26b03af8044fb349e48ec10f6afdd2fac90ab762ba82c28f0f1a35b753d5e72650e93b78281d0c7f27df2c3960d03602d3114d3c3d9cd672aa2730806545ee376afa8cb9a5e6cd150d9d952e5da6002552536cec0b25ee6338f6a261d43777f21993c356da47d048a3271d1936be3e5bb92908f150d1b29f0b6e4eb090f4b9c608d9aa32c3b9c96b9b247cbf0982abfffc62bcec688b7599d84e897694c4623d53aeecd4dc72b95c1a0916961d52abdf43e22b1ad91e665db410416b4f20a1d5a16e6a778b3c81e67c1944bd9db988f0383ba2802beda6a21f64a4356c61252491ded76986ae50177d35971b18adaf008029b63359f180780ecb6f34183e50482d2eb7bcc4ad4c266d3cd33e8668bcdb29284080ab6a48301d5bd5eafbf80de2092dd26f809ea5ee9caf869f4acb6ac5ac47b8742bed7ab95e82a3dbb91e82436cdd8f42b5ea2c449bf353090bec7e95cfc0b8f54d611373ea9e3e7824cf64d864c4890d994d0e9caa592ba68ebf56b55ef70889ae3043986cdfff2051c1c6521225583ca6a5b3c6ed81c02a32b81d98e5424fef0ab2b94ddc01da104a53e04074c864f4f3d2364a1fadee0620d4d9923f100";
 
-        // Pre-fill sample data
         document.getElementById('offerHex').value = SAMPLE_OFFER;
         document.getElementById('acceptHex').value = SAMPLE_ACCEPT;
 
@@ -682,12 +338,13 @@
             return `${btc.toFixed(8)} BTC (${num.toLocaleString()} sats)`;
         }
 
+
         function formatLocktimeToDate(locktime) {
             const LOCKTIME_THRESHOLD = 500000000;
             if (locktime >= LOCKTIME_THRESHOLD) {
-                return new Date(locktime * 1000).toISOString().split('T')[0];
+                return new Date(locktime * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z/, ' UTC');
             }
-            return `block ${locktime}`;
+            return `block ${Number(locktime).toLocaleString()}`;
         }
 
         function truncateHex(hex, startLen = 8, endLen = 8) {
@@ -695,25 +352,45 @@
             return `${hex.slice(0, startLen)}...${hex.slice(-endLen)}`;
         }
 
-        function copyToClipboard(elementId) {
-            const el = document.getElementById(elementId);
-            const text = el.textContent || el.innerText;
-            navigator.clipboard.writeText(text).then(() => {
-                // Brief visual feedback could be added here
+        // Copy on click for all .copy-trigger elements
+        function initCopyTriggers() {
+            document.querySelectorAll('.copy-trigger').forEach(trigger => {
+                // Remove old listeners by cloning
+                const newTrigger = trigger.cloneNode(true);
+                trigger.parentNode.replaceChild(newTrigger, trigger);
+
+                newTrigger.addEventListener('click', async () => {
+                    const textToCopy = newTrigger.getAttribute('data-copy');
+                    if (!textToCopy) return;
+                    try {
+                        await navigator.clipboard.writeText(textToCopy);
+                        const icon = newTrigger.querySelector('.copy-icon');
+                        if (icon) {
+                            const orig = icon.className;
+                            icon.className = 'ph-bold ph-check copy-icon copied ml-1.5 transition-opacity';
+                            setTimeout(() => { icon.className = orig; }, 2000);
+                        }
+                    } catch (err) {
+                        console.error('Failed to copy:', err);
+                    }
+                });
             });
+        }
+
+        // Set copy data on a trigger's parent
+        function setCopyData(elementId, value) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            const trigger = el.closest('.copy-trigger');
+            if (trigger) trigger.setAttribute('data-copy', value || '');
         }
 
         async function doVerify() {
             const offerHex = document.getElementById('offerHex').value.trim();
             const acceptHex = document.getElementById('acceptHex').value.trim();
+            if (!offerHex || !acceptHex) { alert('Please provide both offer and accept hex'); return; }
 
-            if (!offerHex || !acceptHex) {
-                alert('Please provide both offer and accept hex');
-                return;
-            }
-
-            // Show loading
-            document.getElementById('loadingOverlay').classList.add('active');
+            document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('verifyBtn').disabled = true;
 
             try {
@@ -722,27 +399,26 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ offer: offerHex, accept: acceptHex })
                 });
-
                 const result = await response.json();
                 displayResults(result);
-
             } catch (err) {
                 document.getElementById('errorMessage').textContent = `Error: ${err.message}`;
                 document.getElementById('errorMessage').classList.remove('hidden');
                 document.getElementById('inputSection').classList.add('hidden');
                 document.getElementById('resultsSection').classList.remove('hidden');
+                document.getElementById('headerEditBtn').classList.remove('hidden');
             } finally {
-                document.getElementById('loadingOverlay').classList.remove('active');
+                document.getElementById('loadingOverlay').classList.add('hidden');
                 document.getElementById('verifyBtn').disabled = false;
             }
         }
 
         function displayResults(result) {
-            // Hide input, show results
             document.getElementById('inputSection').classList.add('hidden');
             document.getElementById('resultsSection').classList.remove('hidden');
+            document.getElementById('headerEditBtn').classList.remove('hidden');
 
-            // Handle errors
+            // Error
             if (result.error) {
                 document.getElementById('errorMessage').textContent = `Error: ${result.error}`;
                 document.getElementById('errorMessage').classList.remove('hidden');
@@ -750,17 +426,16 @@
                 document.getElementById('errorMessage').classList.add('hidden');
             }
 
-            // Contract type and validity
+            // Contract type & validity
             document.getElementById('contractTypeDisplay').textContent = result.contractType || 'Unknown';
-
             const isValid = result.oracleSigValid && (result.adaptorValid === true);
-            const validityBadge = document.getElementById('validityBadge');
+            const badge = document.getElementById('validityBadge');
             if (isValid) {
-                validityBadge.className = 'badge success large';
-                validityBadge.textContent = 'Valid Cryptography';
+                badge.className = 'inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
+                badge.innerHTML = '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i> Valid Cryptography';
             } else {
-                validityBadge.className = 'badge danger large';
-                validityBadge.textContent = 'Invalid';
+                badge.className = 'inline-flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
+                badge.innerHTML = '<i class="ph-fill ph-x-circle text-red-600 text-lg"></i> Invalid';
             }
 
             // Collateral
@@ -769,106 +444,160 @@
             document.getElementById('acceptCollateralDisplay').textContent = result.acceptCollateral ? formatSats(result.acceptCollateral) : '-';
 
             // Parameters
-            document.getElementById('feeRateDisplay').textContent = result.feeRatePerVb ? `${result.feeRatePerVb} sat/vB` : '-';
-            document.getElementById('cetLocktimeDisplay').textContent = result.cetLocktime ? formatLocktimeToDate(result.cetLocktime) : '-';
-            document.getElementById('refundLocktimeDisplay').textContent = result.refundLocktime ? formatLocktimeToDate(result.refundLocktime) : '-';
-            document.getElementById('offererPubkeyDisplay').textContent = result.offererFundingPubkey ? truncateHex(result.offererFundingPubkey, 8, 8) : '-';
-            document.getElementById('offererPubkeyDisplay').title = result.offererFundingPubkey || '';
-            document.getElementById('accepterPubkeyDisplay').textContent = result.accepterFundingPubkey ? truncateHex(result.accepterFundingPubkey, 8, 8) : '-';
-            document.getElementById('accepterPubkeyDisplay').title = result.accepterFundingPubkey || '';
-            document.getElementById('oracleEventIdDisplay').textContent = result.oracleEventId || '-';
+            const feeRate = result.feeRatePerVb ? `${result.feeRatePerVb} sats/vbyte` : '-';
+            document.getElementById('feeRateDisplay').textContent = feeRate;
+            setCopyData('feeRateDisplay', feeRate);
 
-            // Outcomes table
-            const tbody = document.getElementById('outcomesTableBody');
-            tbody.innerHTML = '';
+            const cetLock = result.cetLocktime ? formatLocktimeToDate(result.cetLocktime) : '-';
+            document.getElementById('cetLocktimeDisplay').textContent = cetLock;
+            setCopyData('cetLocktimeDisplay', cetLock);
+
+            const refundLock = result.refundLocktime ? formatLocktimeToDate(result.refundLocktime) : '-';
+            document.getElementById('refundLocktimeDisplay').textContent = refundLock;
+            setCopyData('refundLocktimeDisplay', refundLock);
+
+            document.getElementById('offererPubkeyDisplay').textContent = result.offererFundingPubkey || '-';
+            setCopyData('offererPubkeyDisplay', result.offererFundingPubkey || '');
+
+            document.getElementById('accepterPubkeyDisplay').textContent = result.accepterFundingPubkey || '-';
+            setCopyData('accepterPubkeyDisplay', result.accepterFundingPubkey || '');
+
+            document.getElementById('oracleEventIdDisplay').textContent = result.oracleEventId || '-';
+            setCopyData('oracleEventIdDisplay', result.oracleEventId || '');
+
+            // Outcomes tree
+            const tree = document.getElementById('outcomesTree');
+            // Clear previous outcomes (keep the label)
+            tree.querySelectorAll('.outcome-card').forEach(el => el.remove());
+
             if (result.outcomes && result.outcomes.length > 0) {
                 for (const outcome of result.outcomes) {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="mono">${outcome.label}</td>
-                        <td>${formatSats(outcome.offererSats)}</td>
-                        <td>${formatSats(outcome.accepterSats)}</td>
+                    const offererFormatted = formatSats(outcome.offererSats);
+                    const accepterFormatted = formatSats(outcome.accepterSats);
+                    const div = document.createElement('div');
+                    div.className = 'outcome-card';
+                    div.innerHTML = `
+                        <div class="bg-gray-50 border border-gray-200 rounded-card p-4 hover:border-gray-300 transition-colors">
+                            <div class="font-mono text-sm font-medium text-gray-900 mb-3 bg-white border border-gray-100 inline-block px-2 py-1 rounded-sm">${escapeHtml(outcome.label)}</div>
+                            <div class="space-y-2">
+                                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                                    <span class="text-sm text-gray-500 flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-blue-500"></div> Offerer Receives</span>
+                                    <div class="copy-trigger inline-flex items-center rounded-sm px-1 py-0.5 group" data-copy="${escapeAttr(offererFormatted)}">
+                                        <span class="copy-text font-mono text-sm text-blue-600 transition-colors">${escapeHtml(offererFormatted)}</span>
+                                        <i class="ph ph-copy copy-icon ml-1.5 text-gray-400 opacity-0 transition-opacity"></i>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                                    <span class="text-sm text-gray-500 flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-gray-400"></div> Accepter Receives</span>
+                                    <div class="copy-trigger inline-flex items-center rounded-sm px-1 py-0.5 group" data-copy="${escapeAttr(accepterFormatted)}">
+                                        <span class="copy-text font-mono text-sm text-gray-700 transition-colors">${escapeHtml(accepterFormatted)}</span>
+                                        <i class="ph ph-copy copy-icon ml-1.5 text-gray-400 opacity-0 transition-opacity"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     `;
-                    tbody.appendChild(tr);
+                    tree.appendChild(div);
                 }
             } else {
-                tbody.innerHTML = '<tr><td colspan="3" class="label">No enumerated outcomes</td></tr>';
+                const div = document.createElement('div');
+                div.className = 'outcome-card';
+                div.innerHTML = '<p class="text-sm text-gray-500">No enumerated outcomes</p>';
+                tree.appendChild(div);
             }
 
-            // Oracle card
+            // Oracle
             document.getElementById('oraclePubkeyDisplay').textContent = result.oraclePubkey || '-';
+            setCopyData('oraclePubkeyDisplay', result.oraclePubkey || '');
             document.getElementById('oracleEventIdDisplay2').textContent = result.oracleEventId || '-';
-            const oracleSigBadge = document.getElementById('oracleSigBadge');
+            setCopyData('oracleEventIdDisplay2', result.oracleEventId || '');
+
+            // Maturity from oracle event ID or refund locktime
+            const maturityText = result.cetLocktime ? formatLocktimeToDate(result.cetLocktime) : '-';
+            document.getElementById('maturityDateDisplay').textContent = maturityText;
+            setCopyData('maturityDateDisplay', maturityText);
+
+            const oracleBadge = document.getElementById('oracleSigBadge');
             if (result.oracleSigValid) {
-                oracleSigBadge.className = 'badge success';
-                oracleSigBadge.textContent = 'Signature Valid';
+                oracleBadge.className = 'inline-flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-card text-xs font-medium';
+                oracleBadge.innerHTML = '<i class="ph-fill ph-shield-check text-green-600 text-sm"></i> Announcement Sig Valid';
             } else {
-                oracleSigBadge.className = 'badge danger';
-                oracleSigBadge.textContent = 'Signature Invalid';
+                oracleBadge.className = 'inline-flex items-center gap-1.5 bg-red-50 text-red-700 px-3 py-1 rounded-card text-xs font-medium';
+                oracleBadge.innerHTML = '<i class="ph-fill ph-shield-warning text-red-600 text-sm"></i> Sig Invalid';
             }
 
             // Cryptographic proofs
-            const oracleSigIcon = document.getElementById('oracleSigIcon');
-            const oracleSigDetail = document.getElementById('oracleSigDetail');
-            if (result.oracleSigValid) {
-                oracleSigIcon.textContent = '\u2713';
-                oracleSigIcon.className = 'step-icon success';
-                oracleSigDetail.textContent = 'Schnorr signature verified';
-                oracleSigDetail.style.color = 'var(--color-success)';
-            } else {
-                oracleSigIcon.textContent = '\u2717';
-                oracleSigIcon.className = 'step-icon danger';
-                oracleSigDetail.textContent = result.oracleSigError || 'Verification failed';
-                oracleSigDetail.style.color = 'var(--color-danger)';
-            }
+            setProofStep('oracleSig', result.oracleSigValid,
+                result.oracleSigValid ? 'Schnorr signature verified against oracle pubkey.' : (result.oracleSigError || 'Verification failed'));
 
-            const fundTxIcon = document.getElementById('fundTxIcon');
-            const fundTxDetail = document.getElementById('fundTxDetail');
-            if (result.fundTxId) {
-                fundTxIcon.textContent = '\u2713';
-                fundTxIcon.className = 'step-icon success';
-                fundTxDetail.textContent = `TX ${truncateHex(result.fundTxId, 8, 8)}`;
-                fundTxDetail.style.color = 'var(--color-success)';
-            } else {
-                fundTxIcon.textContent = '-';
-                fundTxIcon.className = 'step-icon';
-                fundTxDetail.textContent = 'Not reconstructed';
-                fundTxDetail.style.color = 'var(--color-text-muted)';
-            }
+            setProofStep('fundTx', !!result.fundTxId,
+                result.fundTxId ? 'Generated identical 2-of-2 multisig funding output independently.' : 'Not reconstructed');
 
-            const adaptorSigIcon = document.getElementById('adaptorSigIcon');
-            const adaptorSigDetail = document.getElementById('adaptorSigDetail');
             if (result.adaptorValid === true) {
-                adaptorSigIcon.textContent = '\u2713';
-                adaptorSigIcon.className = 'step-icon success';
-                adaptorSigDetail.textContent = `${result.adaptorValidCount}/${result.adaptorTotalCount} valid`;
-                adaptorSigDetail.style.color = 'var(--color-success)';
+                setProofStep('adaptorSig', true, `Verified all ${result.adaptorTotalCount} outcome signatures.`);
             } else if (result.adaptorValid === false) {
-                adaptorSigIcon.textContent = '\u2717';
-                adaptorSigIcon.className = 'step-icon danger';
-                adaptorSigDetail.textContent = result.adaptorError || 'Verification failed';
-                adaptorSigDetail.style.color = 'var(--color-danger)';
+                setProofStep('adaptorSig', false, result.adaptorError || 'Verification failed');
             } else {
-                adaptorSigIcon.textContent = '-';
-                adaptorSigIcon.className = 'step-icon';
-                adaptorSigDetail.textContent = result.tier2Note || 'Not available';
-                adaptorSigDetail.style.color = 'var(--color-text-muted)';
+                setProofStep('adaptorSig', null, result.tier2Note || 'Not available');
             }
 
-            // Contract IDs
+            // Identifiers & Scripts
             document.getElementById('contractIdDisplay').textContent = result.contractId || '-';
+            setCopyData('contractIdDisplay', result.contractId || '');
+
             document.getElementById('fundTxIdDisplay').textContent = result.fundTxId || '-';
+            setCopyData('fundTxIdDisplay', result.fundTxId || '');
+
             document.getElementById('fundingAddressDisplay').textContent = result.fundingAddress || '-';
+            setCopyData('fundingAddressDisplay', result.fundingAddress || '');
+
             document.getElementById('witnessScriptDisplay').textContent = result.witnessScript || '-';
-            document.getElementById('witnessScriptDisplay').title = result.witnessScript || '';
+            setCopyData('witnessScriptDisplay', result.witnessScript || '');
+
+            // Re-init copy triggers for dynamically added elements
+            initCopyTriggers();
+        }
+
+        function setProofStep(prefix, valid, detail) {
+            const iconWrap = document.getElementById(`${prefix}IconWrap`);
+            const icon = document.getElementById(`${prefix}Icon`);
+            const detailEl = document.getElementById(`${prefix}Detail`);
+
+            if (valid === true) {
+                iconWrap.className = 'w-6 h-6 rounded-full bg-green-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white';
+                icon.className = 'ph-bold ph-check text-green-600 text-xs';
+                detailEl.className = 'text-xs text-green-600 mt-1 leading-relaxed';
+            } else if (valid === false) {
+                iconWrap.className = 'w-6 h-6 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white';
+                icon.className = 'ph-bold ph-x text-red-600 text-xs';
+                detailEl.className = 'text-xs text-red-600 mt-1 leading-relaxed';
+            } else {
+                iconWrap.className = 'w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white';
+                icon.className = 'ph-bold ph-minus text-gray-400 text-xs';
+                detailEl.className = 'text-xs text-gray-500 mt-1 leading-relaxed';
+            }
+            detailEl.textContent = detail;
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function escapeAttr(str) {
+            return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
         function resetToInput() {
             document.getElementById('inputSection').classList.remove('hidden');
             document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('headerEditBtn').classList.add('hidden');
             document.getElementById('errorMessage').classList.add('hidden');
         }
-    </script>
 
+        // Init copy triggers on page load
+        document.addEventListener('DOMContentLoaded', initCopyTriggers);
+    </script>
 </body>
 </html>
