@@ -1,19 +1,21 @@
 # DLC Verify
 
-A trustless, open-source tool for independently verifying DLC (Discreet Log Contract) messages before signing. Paste your `DlcOffer` and `DlcAccept` hex — get a human-readable breakdown of every loan term plus full cryptographic verification of the adaptor signatures, with no server required.
+An open-source tool for independently verifying DLC (Discreet Log Contract) messages before signing. Paste your `DlcOffer` and `DlcAccept` hex to get a human-readable breakdown of contract terms plus cryptographic verification of the adaptor signatures.
+
+DLC Verify is currently focused on Lygos-style enumerated loan DLCs, but it is designed to be run locally, self-hosted, and reused for similar DLCs that follow the same message and transaction structure.
 
 ---
 
 ## Why this exists
 
-DLC contract messages are opaque binary blobs. A borrower or lender receiving a `DlcOffer` has no way to know what it encodes without a tool like this. DLC Verify closes that gap.
+DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer` or `DlcAccept`, there is usually no easy way to inspect what it actually encodes without specialized tooling. DLC Verify closes that gap.
 
-**This is the "don't trust, verify" tool for Lygos loans.**
+**This is a "don't trust, verify" tool for enumerated DLC contracts.**
 
-- Borrowers can confirm CET payouts match the loan terms they were quoted
-- Lenders can confirm adaptor signatures are cryptographically valid before broadcasting
-- Both parties can verify oracle identity, maturity dates, and collateral amounts
-- Everything runs locally — no private keys handled, no server trust required
+- Inspect payout outcomes and collateral splits before signing
+- Verify oracle identity, event IDs, locktimes, and funding data
+- Confirm CET adaptor signatures are cryptographically valid
+- Run it locally or self-host it without trusting a third-party backend
 
 ---
 
@@ -25,7 +27,7 @@ DLC contract messages are opaque binary blobs. A borrower or lender receiving a 
 - All outcome payouts (e.g. `repaid`, `liquidated-by-price-threshold`)
 - Oracle public key and event ID
 - Oracle announcement Schnorr signature validity
-- Loan maturity date and refund locktime
+- CET maturity and refund locktime
 - Fee rate
 - Both parties' funding pubkeys and the reconstructed 2-of-2 P2WSH address
 - Funding inputs from offerer and accepter
@@ -46,7 +48,20 @@ npm install
 node verify.js
 ```
 
-The sample offer/accept hex is hardcoded in `verify.js` for testing. Replace `OFFER_HEX` and `ACCEPT_HEX` with your own messages.
+The CLI has sample offer/accept hex hardcoded in `verify.js` for testing, but you can also pass your own values:
+
+```bash
+node verify.js --offer <offer_hex> --accept <accept_hex>
+node verify.js --offer <offer_hex> --accept <accept_hex> --oracle-pubkey <xonly_pubkey>
+```
+
+To use the browser UI locally:
+
+```bash
+node server.js
+```
+
+Then open `http://localhost:3456`.
 
 **Expected output:**
 
@@ -75,7 +90,7 @@ Tier 2 status:
 | `bip-schnorr` | Oracle announcement Schnorr sig verification | Tier 1 |
 | `@bennyblader/ddk-ts` | ECDSA adaptor sig verification via DDK | Tier 2 |
 
-`@bennyblader/ddk-ts` is a public MIT-licensed npm package containing pre-compiled native binaries (arm64/x64). It is the same crypto engine used by the Lygos app itself, so verification is apples-to-apples.
+`@bennyblader/ddk-ts` is a public MIT-licensed npm package containing pre-compiled native binaries (arm64/x64). It provides the cryptographic transaction reconstruction and adaptor-signature verification used by Tier 2.
 
 ---
 
@@ -85,7 +100,7 @@ The key cryptographic claim being verified: *"The accepter's adaptor signatures 
 
 The verification steps:
 
-1. **Reconstruct the fund transaction** — using the exact same parameters from the offer/accept messages, DDK deterministically builds the fund TX and all 4 CETs. This is the same computation the Lygos app performs.
+1. **Reconstruct the fund transaction** — using the exact parameters from the offer/accept messages, DDK deterministically builds the fund transaction and CET set implied by the DLC.
 
 2. **Build tagged attestation messages** — each outcome string (e.g. `"repaid"`) is hashed as `SHA256(SHA256(tag) || SHA256(tag) || outcome_utf8)` where `tag = "DLC/oracle/attestation/v0"`. This is the DLC spec's oracle attestation message format.
 
@@ -99,7 +114,7 @@ The verification steps:
 
 4. **Report VALID/INVALID** — if all N adaptor signatures pass, the contract is cryptographically sound.
 
-**Why this matters:** A valid adaptor signature means the accepter's funds can only be claimed by the party who receives the oracle's attestation signature for that specific outcome. The math guarantees it, not Lygos.
+**Why this matters:** A valid adaptor signature means funds can only be claimed by the party who receives the oracle's attestation signature for that specific outcome. The guarantee comes from the cryptography, not from the application that produced the DLC.
 
 ---
 
@@ -125,20 +140,20 @@ No backend. No wallet. No private keys. Stateless.
 ## Security model
 
 - **No private keys handled.** The tool only reads message hex and computes public verification.
-- **No server trust required.** Runs entirely locally. The hosted version is a convenience; anyone can `npm install && node verify.js`.
-- **Oracle pubkeys are visible in the DlcOffer.** The oracle's identity and nonce commitment are embedded in the offer — you can verify them against Lygos's published oracle pubkey independently.
+- **No server trust required.** You can run the verifier entirely locally or self-host it yourself.
+- **Oracle pubkeys are visible in the DlcOffer.** The oracle's identity and nonce commitment are embedded in the offer. You can compare that pubkey against one you obtained independently, or against a known oracle registry in your own deployment.
 - **DDK is open source.** The native binary is built from [dlcdevkit](https://github.com/bennyblader/ddk-ffi), source-available under MIT.
 
 ---
 
 ## Roadmap
 
-- [ ] Accept hex via CLI args or stdin (not just hardcoded)
+- [ ] Accept hex via stdin in addition to CLI args
 - [ ] DlcSign verification (fund TX signatures)
 - [ ] Refund signature verification
-- [ ] Web UI (paste hex, see results in browser)
-- [ ] Hosted instance at verify.lygos.finance
-- [ ] Oracle pubkey registry (verify oracle matches Lygos's published keys)
+- [ ] Broader DLC shape support beyond the current enumerated focus
+- [ ] Oracle pubkey registry / known-oracle presets for hosted deployments
+- [ ] Optional hosted instance
 
 ---
 
