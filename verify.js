@@ -230,6 +230,23 @@ function buildFundingInputsReport(inputs) {
   });
 }
 
+function buildPartyParamsInputs(inputs) {
+  return inputs.map((input) => ({
+    txid: input.prevTx.txId.toString(),
+    vout: input.prevTxVout,
+    scriptSig: Buffer.alloc(0),
+    maxWitnessLength: input.maxWitnessLen,
+    serialId: BigInt(input.inputSerialId),
+  }));
+}
+
+function sumFundingInputAmount(inputs) {
+  return inputs.reduce((sum, input) => {
+    const prevOutput = input.prevTx.outputs[input.prevTxVout];
+    return sum + BigInt(prevOutput?.value?.sats ?? 0n);
+  }, 0n);
+}
+
 function reconstructFundingAddress(offerFundingPubkey, acceptFundingPubkey, network) {
   const pubkeys = [offerFundingPubkey, acceptFundingPubkey].sort(Buffer.compare);
   const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys, network });
@@ -240,6 +257,29 @@ function reconstructFundingAddress(offerFundingPubkey, acceptFundingPubkey, netw
     witnessScriptHex: p2ms.output ? Buffer.from(p2ms.output).toString('hex') : 'n/a',
     scriptPubKeyHex: p2wsh.output ? Buffer.from(p2wsh.output).toString('hex') : null,
   };
+}
+
+function getFundingScriptAndScriptPubKey(offerFundingPubkey, acceptFundingPubkey) {
+  const pubkeys = Buffer.compare(offerFundingPubkey, acceptFundingPubkey) < 0
+    ? [offerFundingPubkey, acceptFundingPubkey]
+    : [acceptFundingPubkey, offerFundingPubkey];
+  const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys });
+  const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms });
+
+  return {
+    fundingScript: p2ms.output,
+    fundingScriptPubKey: p2wsh.output,
+  };
+}
+
+function findFundOutput(outputs, fundingScriptPubKey) {
+  if (!fundingScriptPubKey) return null;
+  const targetScriptHex = Buffer.from(fundingScriptPubKey).toString('hex');
+  for (const output of outputs) {
+    const outputScriptHex = Buffer.from(output.scriptPubkey ?? output.script ?? []).toString('hex');
+    if (outputScriptHex === targetScriptHex) return output;
+  }
+  return null;
 }
 
 function computeContractIdFromFundingOutpoint(tempContractId, fundTxIdHex, fundOutputIndex) {
@@ -510,7 +550,6 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       accept: BigInt(offer.contractInfo.totalCollateral) - BigInt(o.localPayout),
     }));
 
-    const fi = offer.fundingInputs[0];
     // CRITICAL: use toString() for display-order txid, NOT toString('hex')
     const localParams = {
       fundPubkey: offer.fundingPubkey,
@@ -518,38 +557,21 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       changeSerialId: BigInt(offer.changeSerialId),
       payoutScriptPubkey: offer.payoutSpk,
       payoutSerialId: BigInt(offer.payoutSerialId),
-      inputs: [{
-        txid: fi.prevTx.txId.toString(),
-        vout: fi.prevTxVout,
-        scriptSig: Buffer.alloc(0),
-        maxWitnessLength: fi.maxWitnessLen,
-        serialId: BigInt(fi.inputSerialId),
-      }],
-      inputAmount: BigInt(fi.prevTx.outputs[fi.prevTxVout].value.sats),
+      inputs: buildPartyParamsInputs(offer.fundingInputs),
+      inputAmount: sumFundingInputAmount(offer.fundingInputs),
       collateral: BigInt(offer.offerCollateral),
       dlcInputs: [],
     };
 
     // Build remote params (accepter may have 0 collateral in single-funded model)
-    const remoteInputs = accept.fundingInputs.map((afi) => ({
-      txid: afi.prevTx.txId.toString(),
-      vout: afi.prevTxVout,
-      scriptSig: Buffer.alloc(0),
-      maxWitnessLength: afi.maxWitnessLen,
-      serialId: BigInt(afi.inputSerialId),
-    }));
-    const remoteInputAmount = accept.fundingInputs.reduce(
-      (sum, afi) => sum + BigInt(afi.prevTx.outputs[afi.prevTxVout].value.sats),
-      0n,
-    );
     const remoteParams = {
       fundPubkey: accept.fundingPubkey,
       changeScriptPubkey: accept.changeSpk,
       changeSerialId: BigInt(accept.changeSerialId),
       payoutScriptPubkey: accept.payoutSpk,
       payoutSerialId: BigInt(accept.payoutSerialId),
-      inputs: remoteInputs,
-      inputAmount: remoteInputAmount,
+      inputs: buildPartyParamsInputs(accept.fundingInputs),
+      inputAmount: sumFundingInputAmount(accept.fundingInputs),
       collateral: BigInt(accept.acceptCollateral),
       dlcInputs: [],
     };
@@ -571,11 +593,10 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
     // Build tagged attestation messages: Array<Array<Array<Buffer>>> (per-CET → per-oracle → msgs)
     const messagesForDdk = descriptor.outcomes.map((o) => [[getTaggedOutcomeHash(o.outcome)]]);
 
-    // Funding script: 2-of-2 P2MS in lexicographic pubkey order
-    const pubkeys = Buffer.compare(offer.fundingPubkey, accept.fundingPubkey) < 0
-      ? [offer.fundingPubkey, accept.fundingPubkey]
-      : [accept.fundingPubkey, offer.fundingPubkey];
-    const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys });
+    const { fundingScript, fundingScriptPubKey } = getFundingScriptAndScriptPubKey(
+      offer.fundingPubkey,
+      accept.fundingPubkey,
+    );
 
     const oracleInfo = [{
       publicKey: oracleAnnouncement.oraclePublicKey,
@@ -589,15 +610,18 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       proof: Buffer.from(''),
     }));
 
-    const fundOutputValue = dlcTxs.fund.outputs[0].value;
+    const fundOutput = findFundOutput(dlcTxs.fund.outputs, fundingScriptPubKey);
+    if (!fundOutput) {
+      throw new Error('Could not locate fund output in reconstructed funding transaction');
+    }
 
     const isValid = ddk.verifyCetAdaptorSigsFromOracleInfo(
       adaptorPairs,
       dlcTxs.cets,
       oracleInfo,
       accept.fundingPubkey,
-      p2ms.output,
-      fundOutputValue,
+      fundingScript,
+      fundOutput.value,
       messagesForDdk,
     );
 
