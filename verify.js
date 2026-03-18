@@ -24,13 +24,54 @@ a71c0000000175e8f015ca87424c5fd51da4c15ba8e49d0626c64e27f9a55d0c42a94285216b0000
 
 const LOCKTIME_THRESHOLD = 500000000;
 
+function normalizeOraclePubkeyHex(pubkey) {
+  if (pubkey === undefined || pubkey === null) return null;
+  const normalized = String(pubkey).trim().toLowerCase().replace(/^0x/, '').replace(/\s+/g, '');
+  if (!normalized) return null;
+  if (!/^[0-9a-f]+$/.test(normalized)) {
+    throw new Error('Oracle pubkey must be hex');
+  }
+  if (normalized.length !== 64) {
+    throw new Error('Oracle pubkey must be a 32-byte x-only pubkey (64 hex chars)');
+  }
+  return normalized;
+}
+
+function parseCliArgs(args) {
+  const parsed = {
+    offerHex: OFFER_HEX,
+    acceptHex: ACCEPT_HEX,
+    expectedOraclePubkey: null,
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--offer' && args[i + 1]) {
+      parsed.offerHex = args[++i];
+      continue;
+    }
+    if (arg === '--accept' && args[i + 1]) {
+      parsed.acceptHex = args[++i];
+      continue;
+    }
+    if (arg === '--oracle-pubkey' && args[i + 1]) {
+      parsed.expectedOraclePubkey = args[++i];
+      continue;
+    }
+  }
+
+  return parsed;
+}
+
 /**
  * Verify a DLC offer/accept pair and return structured JSON result.
  * @param {string} offerHex - hex-encoded DlcOffer message
  * @param {string} acceptHex - hex-encoded DlcAccept message
+ * @param {Object} [options]
+ * @param {string} [options.expectedOraclePubkey] - optional x-only oracle pubkey to compare against
  * @returns {Promise<Object>} structured verification result
  */
-async function verifyDlc(offerHex, acceptHex) {
+async function verifyDlc(offerHex, acceptHex, options = {}) {
   const result = {
     // Tier 1
     contractType: null,
@@ -39,6 +80,10 @@ async function verifyDlc(offerHex, acceptHex) {
     acceptCollateral: null,
     outcomes: [],
     oraclePubkey: null,
+    extractedOraclePubkey: null,
+    expectedOraclePubkey: null,
+    oraclePubkeySource: 'derived',
+    oraclePubkeyMatchesExpected: null,
     oracleEventId: null,
     oracleSigValid: false,
     oracleSigError: null,
@@ -66,6 +111,7 @@ async function verifyDlc(offerHex, acceptHex) {
   };
 
   try {
+    const expectedOraclePubkey = normalizeOraclePubkeyHex(options.expectedOraclePubkey);
     const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
     const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
 
@@ -117,7 +163,14 @@ async function verifyDlc(offerHex, acceptHex) {
     }));
 
     // Oracle info
-    result.oraclePubkey = oracleAnnouncement?.oraclePublicKey?.toString('hex') || null;
+    const extractedOraclePubkey = oracleAnnouncement?.oraclePublicKey?.toString('hex') || null;
+    result.extractedOraclePubkey = extractedOraclePubkey;
+    result.expectedOraclePubkey = expectedOraclePubkey;
+    result.oraclePubkey = expectedOraclePubkey || extractedOraclePubkey;
+    result.oraclePubkeySource = expectedOraclePubkey ? 'provided' : 'derived';
+    result.oraclePubkeyMatchesExpected = expectedOraclePubkey
+      ? expectedOraclePubkey === extractedOraclePubkey
+      : null;
     result.oracleEventId = oracleAnnouncement?.getEventId?.() || oracleAnnouncement?.oracleEvent?.eventId || null;
 
     // Oracle signature verification
@@ -643,8 +696,10 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
 }
 
 async function main() {
-  const offer = DlcOffer.deserialize(Buffer.from(OFFER_HEX, 'hex'));
-  const accept = DlcAccept.deserialize(Buffer.from(ACCEPT_HEX, 'hex'));
+  const { offerHex, acceptHex, expectedOraclePubkey } = parseCliArgs(process.argv.slice(2));
+  const normalizedExpectedOraclePubkey = normalizeOraclePubkeyHex(expectedOraclePubkey);
+  const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
+  const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
 
   const contract = extractContractInfo(offer.contractInfo);
   const descriptor = contract.descriptor;
@@ -674,7 +729,12 @@ async function main() {
   const offerInputs = buildFundingInputsReport(offer.fundingInputs);
   const acceptInputs = buildFundingInputsReport(accept.fundingInputs);
 
-  const oraclePubkey = oracleAnnouncement?.oraclePublicKey?.toString('hex') || 'n/a';
+  const extractedOraclePubkey = oracleAnnouncement?.oraclePublicKey?.toString('hex') || 'n/a';
+  const oraclePubkey = normalizedExpectedOraclePubkey || extractedOraclePubkey;
+  const oraclePubkeySource = normalizedExpectedOraclePubkey ? 'provided' : 'derived';
+  const oraclePubkeyMatchesExpected = normalizedExpectedOraclePubkey
+    ? normalizedExpectedOraclePubkey === extractedOraclePubkey
+    : null;
   const oracleEventId = oracleAnnouncement?.getEventId?.() || oracleAnnouncement?.oracleEvent?.eventId || 'n/a';
   const eventMaturityEpoch = oracleAnnouncement?.getEventMaturityEpoch?.() || oracleAnnouncement?.oracleEvent?.eventMaturityEpoch;
 
@@ -731,6 +791,11 @@ async function main() {
   }
   lines.push('');
   lines.push(`Oracle pubkey: ${oraclePubkey}`);
+  lines.push(`Oracle pubkey source: ${oraclePubkeySource}`);
+  if (normalizedExpectedOraclePubkey) {
+    lines.push(`Oracle pubkey extracted from DLC: ${extractedOraclePubkey}`);
+    lines.push(`Oracle pubkey match: ${oraclePubkeyMatchesExpected ? 'matches provided oracle pubkey' : 'DOES NOT MATCH provided oracle pubkey'}`);
+  }
   lines.push(`Oracle event ID: ${oracleEventId}`);
   lines.push(`Oracle announcement Schnorr signature: ${oracleSigValid ? 'valid' : `invalid (${oracleSigError})`}`);
   lines.push(`Loan maturity date: ${locktimeToHuman(offer.cetLocktime)}${eventMaturityEpoch ? ` (oracle event maturity: ${locktimeToHuman(eventMaturityEpoch)})` : ''}`);
@@ -795,5 +860,8 @@ module.exports = { verifyDlc };
 
 // CLI entry point
 if (require.main === module) {
-  main();
+  main().catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
 }
