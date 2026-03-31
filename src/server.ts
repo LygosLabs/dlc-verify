@@ -1,5 +1,5 @@
+import * as path from 'node:path';
 import express, { Request, Response } from 'express';
-import * as path from 'path';
 import { verifyDlc } from './verify';
 
 const app = express();

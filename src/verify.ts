@@ -1,7 +1,8 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as bitcoin from 'bitcoinjs-lib';
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { verify, math } = require('bip-schnorr');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -19,19 +20,18 @@ const {
 } = require('@node-dlc/messaging');
 
 import type {
-  VerificationResult,
-  Tier2Result,
-  VerifyOptions,
   CliArgs,
-  SampleData,
-  FundingAddressInfo,
   ContractInfo,
-  SingleFundedComputation,
   DdkModule,
-  PartyParams,
-  DlcTransactions,
-  OutcomeInfo,
+  FundingAddressInfo,
   FundingInput,
+  OutcomeInfo,
+  PartyParams,
+  SampleData,
+  SingleFundedComputation,
+  Tier2Result,
+  VerificationResult,
+  VerifyOptions,
 } from './types';
 
 const LOCKTIME_THRESHOLD = 500000000;
@@ -105,7 +105,6 @@ function parseCliArgs(args: string[]): CliArgs {
     }
     if (arg === '--oracle-pubkey' && args[i + 1]) {
       parsed.expectedOraclePubkey = args[++i];
-      continue;
     }
   }
 
@@ -193,11 +192,13 @@ export async function verifyDlc(
     // Contract type and outcomes
     if (descriptor instanceof EnumeratedDescriptor) {
       result.contractType = 'Enumerated';
-      result.outcomes = descriptor.outcomes.map((o: { outcome: string; localPayout: bigint }): OutcomeInfo => ({
-        label: o.outcome,
-        offererSats: o.localPayout.toString(),
-        accepterSats: (totalCollateral - o.localPayout).toString(),
-      }));
+      result.outcomes = descriptor.outcomes.map(
+        (o: { outcome: string; localPayout: bigint }): OutcomeInfo => ({
+          label: o.outcome,
+          offererSats: o.localPayout.toString(),
+          accepterSats: (totalCollateral - o.localPayout).toString(),
+        }),
+      );
     } else if (descriptor instanceof NumericalDescriptor) {
       result.contractType = `Numerical (${descriptor.numDigits} digits)`;
     } else {
@@ -224,9 +225,7 @@ export async function verifyDlc(
     result.expectedOraclePubkey = expectedOraclePubkey;
     result.oraclePubkey = expectedOraclePubkey || extractedOraclePubkey;
     result.oraclePubkeySource = expectedOraclePubkey ? 'provided' : 'derived';
-    result.oraclePubkeyMatchesExpected = expectedOraclePubkey
-      ? expectedOraclePubkey === extractedOraclePubkey
-      : null;
+    result.oraclePubkeyMatchesExpected = expectedOraclePubkey ? expectedOraclePubkey === extractedOraclePubkey : null;
     result.oracleEventId = oracleAnnouncement?.getEventId?.() || oracleAnnouncement?.oracleEvent?.eventId || null;
 
     // Oracle signature verification
@@ -248,8 +247,12 @@ export async function verifyDlc(
       result.contractId = singleFundedComputation.cidRpcTxid;
     } else {
       const embeddedIds = [
-        ...offer.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
-        ...accept.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+        ...offer.fundingInputs
+          .map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex'))
+          .filter(Boolean),
+        ...accept.fundingInputs
+          .map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex'))
+          .filter(Boolean),
       ];
       if (embeddedIds.length > 0) {
         result.contractId = embeddedIds[0] as string;
@@ -341,10 +344,12 @@ interface FundingInputReport {
   sats?: bigint;
 }
 
-function buildFundingInputsReport(inputs: Array<{
-  prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
-  prevTxVout: number;
-}>): FundingInputReport[] {
+function buildFundingInputsReport(
+  inputs: Array<{
+    prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+    prevTxVout: number;
+  }>,
+): FundingInputReport[] {
   return inputs.map((input) => {
     const txid = input.prevTx.txId.toString();
     const vout = input.prevTxVout;
@@ -357,12 +362,14 @@ function buildFundingInputsReport(inputs: Array<{
   });
 }
 
-function buildPartyParamsInputs(inputs: Array<{
-  prevTx: { txId: { toString: () => string } };
-  prevTxVout: number;
-  maxWitnessLen: number;
-  inputSerialId: bigint;
-}>): Array<{ txid: string; vout: number; scriptSig: Buffer; maxWitnessLength: number; serialId: bigint }> {
+function buildPartyParamsInputs(
+  inputs: Array<{
+    prevTx: { txId: { toString: () => string } };
+    prevTxVout: number;
+    maxWitnessLen: number;
+    inputSerialId: bigint;
+  }>,
+): Array<{ txid: string; vout: number; scriptSig: Buffer; maxWitnessLength: number; serialId: bigint }> {
   return inputs.map((input) => ({
     txid: input.prevTx.txId.toString(),
     vout: input.prevTxVout,
@@ -372,10 +379,12 @@ function buildPartyParamsInputs(inputs: Array<{
   }));
 }
 
-function sumFundingInputAmount(inputs: Array<{
-  prevTx: { outputs: Array<{ value?: { sats?: bigint } }> };
-  prevTxVout: number;
-}>): bigint {
+function sumFundingInputAmount(
+  inputs: Array<{
+    prevTx: { outputs: Array<{ value?: { sats?: bigint } }> };
+    prevTxVout: number;
+  }>,
+): bigint {
   return inputs.reduce((sum, input) => {
     const prevOutput = input.prevTx.outputs[input.prevTxVout];
     return sum + BigInt(prevOutput?.value?.sats ?? 0n);
@@ -484,8 +493,7 @@ function estimateSingleFundedFee(
     outputBaseSize +
     4; // locktime
 
-  const witnessSize =
-    (hasWitness ? 2 : 0) + offer.fundingInputs.reduce((sum, input) => sum + input.maxWitnessLen, 0);
+  const witnessSize = (hasWitness ? 2 : 0) + offer.fundingInputs.reduce((sum, input) => sum + input.maxWitnessLen, 0);
 
   const vbytes = Math.ceil((strippedSize * 4 + witnessSize) / 4);
   return BigInt(vbytes) * offer.feeRatePerVb;
@@ -546,11 +554,7 @@ function tryComputeContractIdFromSingleFunded(
           return sum;
         }, 0n);
 
-        const cidRpcTxid = computeContractIdFromFundingOutpoint(
-          offer.temporaryContractId,
-          fundTxId,
-          fundOutputIndex,
-        );
+        const cidRpcTxid = computeContractIdFromFundingOutpoint(offer.temporaryContractId, fundTxId, fundOutputIndex);
         const cidInternalTxid = computeContractIdFromFundingOutpoint(
           offer.temporaryContractId,
           Buffer.from(fundTxId, 'hex').reverse().toString('hex'),
@@ -609,11 +613,7 @@ function tryComputeContractIdFromSingleFunded(
   const fundOutputIndex = outputs.findIndex((o) => o.kind === 'fund');
   if (fundOutputIndex < 0) return null;
 
-  const cidRpcTxid = computeContractIdFromFundingOutpoint(
-    offer.temporaryContractId,
-    fundTxId,
-    fundOutputIndex,
-  );
+  const cidRpcTxid = computeContractIdFromFundingOutpoint(offer.temporaryContractId, fundTxId, fundOutputIndex);
   const cidInternalTxid = computeContractIdFromFundingOutpoint(
     offer.temporaryContractId,
     Buffer.from(fundTxId, 'hex').reverse().toString('hex'),
@@ -725,7 +725,9 @@ async function tryTier2(
         inputSerialId: bigint;
       }>;
       acceptCollateral: bigint;
-      cetAdaptorSignatures?: { sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }> } | Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
+      cetAdaptorSignatures?:
+        | { sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }> }
+        | Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
     };
 
     // Build DLC transactions via DDK (deterministic reconstruction)
@@ -785,6 +787,10 @@ async function tryTier2(
       acceptTyped.fundingPubkey,
     );
 
+    if (!fundingScript) {
+      throw new Error('Could not derive funding script from pubkeys');
+    }
+
     const oracleInfo = [
       {
         publicKey: oracleAnnouncement.oraclePublicKey,
@@ -794,9 +800,7 @@ async function tryTier2(
 
     // Adaptor pairs: for enum contracts, concat encryptedSig + dleqProof into signature field
     const adaptorSigsRaw = acceptTyped.cetAdaptorSignatures;
-    const adaptorSigs = Array.isArray(adaptorSigsRaw)
-      ? adaptorSigsRaw
-      : (adaptorSigsRaw?.sigs || []);
+    const adaptorSigs = Array.isArray(adaptorSigsRaw) ? adaptorSigsRaw : adaptorSigsRaw?.sigs || [];
     const adaptorPairs = adaptorSigs.map((sig: { encryptedSig: Buffer; dleqProof: Buffer }) => ({
       signature: Buffer.concat([sig.encryptedSig, sig.dleqProof]),
       proof: Buffer.from(''),
@@ -812,7 +816,7 @@ async function tryTier2(
       dlcTxs.cets,
       oracleInfo,
       acceptTyped.fundingPubkey,
-      fundingScript!,
+      fundingScript,
       fundOutput.value,
       messagesForDdk,
     );
@@ -881,7 +885,8 @@ async function main(): Promise<void> {
     ? normalizedExpectedOraclePubkey === extractedOraclePubkey
     : null;
   const oracleEventId = oracleAnnouncement?.getEventId?.() || oracleAnnouncement?.oracleEvent?.eventId || 'n/a';
-  const eventMaturityEpoch = oracleAnnouncement?.getEventMaturityEpoch?.() || oracleAnnouncement?.oracleEvent?.eventMaturityEpoch;
+  const eventMaturityEpoch =
+    oracleAnnouncement?.getEventMaturityEpoch?.() || oracleAnnouncement?.oracleEvent?.eventMaturityEpoch;
 
   let oracleSigValid = false;
   let oracleSigError = 'n/a';
@@ -910,8 +915,12 @@ async function main(): Promise<void> {
     computedContractId = `${singleFundedComputation.cidRpcTxid} (rpc-txid convention)`;
   } else {
     const embeddedIds = [
-      ...offer.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
-      ...accept.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+      ...offer.fundingInputs
+        .map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex'))
+        .filter(Boolean),
+      ...accept.fundingInputs
+        .map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex'))
+        .filter(Boolean),
     ];
     if (embeddedIds.length > 0) {
       const unique = [...new Set(embeddedIds)];

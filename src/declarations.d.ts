@@ -43,7 +43,7 @@ declare module '@node-dlc/messaging' {
     fundingInputs: Array<{
       prevTx: {
         txId: { toString(): string };
-        outputs: Array<{ value?: { sats?: bigint } }>
+        outputs: Array<{ value?: { sats?: bigint } }>;
       };
       prevTxVout: number;
       sequence: { value: number };
@@ -71,16 +71,18 @@ declare module '@node-dlc/messaging' {
     fundingInputs: Array<{
       prevTx: {
         txId: { toString(): string };
-        outputs: Array<{ value?: { sats?: bigint } }>
+        outputs: Array<{ value?: { sats?: bigint } }>;
       };
       prevTxVout: number;
       maxWitnessLen: number;
       inputSerialId: bigint;
       dlcInput?: { contractId?: Buffer };
     }>;
-    cetAdaptorSignatures?: {
-      sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }>
-    } | Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
+    cetAdaptorSignatures?:
+      | {
+          sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
+        }
+      | Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
   }
 
   export class EnumeratedDescriptor {
