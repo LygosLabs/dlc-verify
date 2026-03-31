@@ -1,10 +1,14 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const bitcoin = require('bitcoinjs-lib');
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import * as bitcoin from 'bitcoinjs-lib';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { verify, math } = require('bip-schnorr');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { BitcoinNetworks, chainHashFromNetwork } = require('bitcoin-networks');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { DlcTxBuilder } = require('@node-dlc/core');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
   DlcOffer,
   DlcAccept,
@@ -14,17 +18,56 @@ const {
   MultiOracleInfo,
 } = require('@node-dlc/messaging');
 
-const OFFER_HEX = `
-a71a000000010006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f75e8f015ca87424c5fd51da4c15ba8e49d0626c64e27f9a55d0c42a94285216b000000000000004e200004086e6f742d706169640000000000004e20067265706169640000000000004e201d6c6971756964617465642d62792d6d617475726174696f6e2d6461746500000000000000001d6c6971756964617465642d62792d70726963652d7468726573686f6c64000000000000000000fdd824fd012a18c141dd421bb8c54e2965f964b9c53c30e2f8c288e84684d2da313fb314a16b3a739b951ab043c9a9b012c972c542ec4533cbab53ae597ff7b1cbd2b57e26dd8731249d979def2d5d76c61795969e953807d37ff36ef8dbab60d57ae08bb004fdd822c60001aaf6f439e22ebc287b0b72e45d62c2a6fc10392bd6e67b0fed7a5c0623cd909869ca9e00fdd8064e0004086e6f742d70616964067265706169641d6c6971756964617465642d62792d6d617475726174696f6e2d646174651d6c6971756964617465642d62792d70726963652d7468726573686f6c644d6c6f616e2d6d6174757265642d37393332653463326635313336636133643833653530373938373662643139333131626236316462336534306533323865346531386333386362316433343532036eb76057911e044f21ff936e44d559e50e8205115b398873663062978d59ca5300160014c4c19bd65e8e01887b4233d3d00aeba814e32e700000000000002e6c0000000000004e2001000000000000f93beb02000000000101e39ded02db3a29b96516add32332f14a90564b5003c69b019007127caa0984780100000000ffffffff026c5000000000000022002094dc89c4908b2b6e77240a7aef9bf348305ef5747eb9295e72dd9f84b61ce030c6d2120000000000160014a1ce41748ea25502e2b8a96b9f355d9f127d6650024830450221008adea390dbe7eed07f75e658c09796bce58a20d055613a012fcf52bacf38f2f90220708568036845fff6dac50103141b64dfa1fa5d9d399861f18ff4357e1fb4419001210384c27feb59925d4fab7a109e819359593a4024805a8aaddb2e36eefbe50f2a2b0000000000000001ffffffff006c000000001600140aaf7cb8008f5ad8869e13f47f490d4cc1e2870a00000000004f3700000000000005069e00000000000000036954661469d3d880
-`.replace(/\s+/g, '');
-
-const ACCEPT_HEX = `
-a71c0000000175e8f015ca87424c5fd51da4c15ba8e49d0626c64e27f9a55d0c42a94285216b000000000000000003903300005c2442e25c16cc27491e27cac1f694873c66f3754290be363909378c001600146ca95318f13155e107ecaee89be880f614885154f9ba97c4a58d90c200001600146ca95318f13155e107ecaee89be880f61488515420ce87964a55e5520402d6976bff43f6db838aee8b7fe8bd3fa9e2c4d1c93cd713ba3f17a13230c6067403175812ef0fcf9577c3ded949c35269c2fb1d366708e03c4edd2e2bb3943e40b26048bf4f26e6cae095802ae112b1296ec9a13831f445b37081c362c4aa3542dbdfa78a978a17d7b8bd183ec83220d9714d584ce2d4a2cff316bfdc49681781e00b1cee98438bd63ecc6f225fcd7c9cfabe0ba98af13609112547f6d67ab30c4e02966e83473db580ddbabc8fda1d62074b08d823aee5e3013430449e2ebf3dd48903929a9152dec88ff9c1cd459554255c0d7f6862f8060c40520b74555afaedeb9a6567a37882ac4f5f3ed6ef194e74ceda88fde0e2d90423115b77459a880b6615004b50141972be52af0a569afe8014d87efdf26b03af8044fb349e48ec10f6afdd2fac90ab762ba82c28f0f1a35b753d5e72650e93b78281d0c7f27df2c3960d03602d3114d3c3d9cd672aa2730806545ee376afa8cb9a5e6cd150d9d952e5da6002552536cec0b25ee6338f6a261d43777f21993c356da47d048a3271d1936be3e5bb92908f150d1b29f0b6e4eb090f4b9c608d9aa32c3b9c96b9b247cbf0982abfffc62bcec688b7599d84e897694c4623d53aeecd4dc72b95c1a0916961d52abdf43e22b1ad91e665db410416b4f20a1d5a16e6a778b3c81e67c1944bd9db988f0383ba2802beda6a21f64a4356c61252491ded76986ae50177d35971b18adaf008029b63359f180780ecb6f34183e50482d2eb7bcc4ad4c266d3cd33e8668bcdb29284080ab6a48301d5bd5eafbf80de2092dd26f809ea5ee9caf869f4acb6ac5ac47b8742bed7ab95e82a3dbb91e82436cdd8f42b5ea2c449bf353090bec7e95cfc0b8f54d611373ea9e3e7824cf64d864c4890d994d0e9caa592ba68ebf56b55ef70889ae3043986cdfff2051c1c6521225583ca6a5b3c6ed81c02a32b81d98e5424fef0ab2b94ddc01da104a53e04074c864f4f3d2364a1fadee0620d4d9923f100
-`.replace(/\s+/g, '');
+import type {
+  VerificationResult,
+  Tier2Result,
+  VerifyOptions,
+  CliArgs,
+  SampleData,
+  FundingAddressInfo,
+  ContractInfo,
+  SingleFundedComputation,
+  DdkModule,
+  PartyParams,
+  DlcTransactions,
+  OutcomeInfo,
+  FundingInput,
+} from './types';
 
 const LOCKTIME_THRESHOLD = 500000000;
 
-function normalizeOraclePubkeyHex(pubkey) {
+const HELP_TEXT = `
+DLC Verify - Cryptographic DLC verification tool
+
+Usage:
+  node dist/verify.js [options]
+
+Options:
+  --offer <hex>           DLC offer message hex
+  --accept <hex>          DLC accept message hex
+  --oracle-pubkey <hex>   Expected oracle x-only pubkey (optional)
+  --help, -h              Show this help
+
+Examples:
+  node dist/verify.js                              # Use sample data
+  node dist/verify.js --offer <hex> --accept <hex> # Verify custom DLC
+  node dist/verify.js --offer <hex> --accept <hex> --oracle-pubkey <hex>
+
+The tool performs two tiers of verification:
+  Tier 1: Structural verification (collateral, outcomes, oracle info)
+  Tier 2: Cryptographic verification (CET adaptor signatures via DDK)
+`.trim();
+
+function loadSampleData(): SampleData {
+  const samplePath = path.resolve(__dirname, '../examples/sample.json');
+  if (!fs.existsSync(samplePath)) {
+    throw new Error(`Sample data not found at ${samplePath}`);
+  }
+  const raw = fs.readFileSync(samplePath, 'utf-8');
+  return JSON.parse(raw) as SampleData;
+}
+
+function normalizeOraclePubkeyHex(pubkey: string | undefined | null): string | null {
   if (pubkey === undefined || pubkey === null) return null;
   const normalized = String(pubkey).trim().toLowerCase().replace(/^0x/, '').replace(/\s+/g, '');
   if (!normalized) return null;
@@ -37,15 +80,21 @@ function normalizeOraclePubkeyHex(pubkey) {
   return normalized;
 }
 
-function parseCliArgs(args) {
-  const parsed = {
-    offerHex: OFFER_HEX,
-    acceptHex: ACCEPT_HEX,
+function parseCliArgs(args: string[]): CliArgs {
+  const sample = loadSampleData();
+  const parsed: CliArgs = {
+    offerHex: sample.offer,
+    acceptHex: sample.accept,
     expectedOraclePubkey: null,
+    showHelp: false,
   };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === '--help' || arg === '-h') {
+      parsed.showHelp = true;
+      continue;
+    }
     if (arg === '--offer' && args[i + 1]) {
       parsed.offerHex = args[++i];
       continue;
@@ -65,14 +114,17 @@ function parseCliArgs(args) {
 
 /**
  * Verify a DLC offer/accept pair and return structured JSON result.
- * @param {string} offerHex - hex-encoded DlcOffer message
- * @param {string} acceptHex - hex-encoded DlcAccept message
- * @param {Object} [options]
- * @param {string} [options.expectedOraclePubkey] - optional x-only oracle pubkey to compare against
- * @returns {Promise<Object>} structured verification result
+ * @param offerHex - hex-encoded DlcOffer message
+ * @param acceptHex - hex-encoded DlcAccept message
+ * @param options - verification options
+ * @returns structured verification result
  */
-async function verifyDlc(offerHex, acceptHex, options = {}) {
-  const result = {
+export async function verifyDlc(
+  offerHex: string,
+  acceptHex: string,
+  options: VerifyOptions = {},
+): Promise<VerificationResult> {
+  const result: VerificationResult = {
     // Tier 1
     contractType: null,
     totalCollateral: null,
@@ -141,7 +193,7 @@ async function verifyDlc(offerHex, acceptHex, options = {}) {
     // Contract type and outcomes
     if (descriptor instanceof EnumeratedDescriptor) {
       result.contractType = 'Enumerated';
-      result.outcomes = descriptor.outcomes.map((o) => ({
+      result.outcomes = descriptor.outcomes.map((o: { outcome: string; localPayout: bigint }): OutcomeInfo => ({
         label: o.outcome,
         offererSats: o.localPayout.toString(),
         accepterSats: (totalCollateral - o.localPayout).toString(),
@@ -153,14 +205,18 @@ async function verifyDlc(offerHex, acceptHex, options = {}) {
     }
 
     // Funding inputs
-    result.offerInputs = buildFundingInputsReport(offer.fundingInputs).map((i) => ({
-      outpoint: i.outpoint,
-      sats: i.sats !== undefined ? i.sats.toString() : null,
-    }));
-    result.acceptInputs = buildFundingInputsReport(accept.fundingInputs).map((i) => ({
-      outpoint: i.outpoint,
-      sats: i.sats !== undefined ? i.sats.toString() : null,
-    }));
+    result.offerInputs = buildFundingInputsReport(offer.fundingInputs).map(
+      (i: { outpoint: string; sats?: bigint }): FundingInput => ({
+        outpoint: i.outpoint,
+        sats: i.sats !== undefined ? i.sats.toString() : null,
+      }),
+    );
+    result.acceptInputs = buildFundingInputsReport(accept.fundingInputs).map(
+      (i: { outpoint: string; sats?: bigint }): FundingInput => ({
+        outpoint: i.outpoint,
+        sats: i.sats !== undefined ? i.sats.toString() : null,
+      }),
+    );
 
     // Oracle info
     const extractedOraclePubkey = oracleAnnouncement?.oraclePublicKey?.toString('hex') || null;
@@ -182,7 +238,7 @@ async function verifyDlc(offerHex, acceptHex, options = {}) {
         result.oracleSigError = null;
       } catch (e) {
         result.oracleSigValid = false;
-        result.oracleSigError = e.message;
+        result.oracleSigError = (e as Error).message;
       }
     }
 
@@ -192,11 +248,11 @@ async function verifyDlc(offerHex, acceptHex, options = {}) {
       result.contractId = singleFundedComputation.cidRpcTxid;
     } else {
       const embeddedIds = [
-        ...offer.fundingInputs.map((i) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
-        ...accept.fundingInputs.map((i) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+        ...offer.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+        ...accept.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
       ];
       if (embeddedIds.length > 0) {
-        result.contractId = embeddedIds[0];
+        result.contractId = embeddedIds[0] as string;
       }
     }
 
@@ -210,45 +266,46 @@ async function verifyDlc(offerHex, acceptHex, options = {}) {
     result.adaptorValidCount = tier2.adaptorValidCount;
     result.adaptorTotalCount = tier2.adaptorTotalCount;
     result.adaptorError = tier2.adaptorError;
-
   } catch (err) {
-    result.error = err.message;
+    result.error = (err as Error).message;
   }
 
   return result;
 }
 
-function satsToBtc(sats) {
+function satsToBtc(sats: bigint | number | string): string {
   return (Number(sats) / 1e8).toFixed(8);
 }
 
-function amountFmt(sats) {
+function amountFmt(sats: bigint | number | string): string {
   return `${satsToBtc(sats)} BTC (${sats} sats)`;
 }
 
-function locktimeToHuman(locktime) {
+function locktimeToHuman(locktime: number): string {
   if (locktime >= LOCKTIME_THRESHOLD) {
     return `${new Date(locktime * 1000).toISOString()} UTC`;
   }
   return `block height ${locktime}`;
 }
 
-function detectNetwork(chainHash) {
+function detectNetwork(chainHash: Buffer): bitcoin.Network {
   const entries = Object.values(BitcoinNetworks);
   for (const net of entries) {
-    if (chainHash.equals(chainHashFromNetwork(net))) {
-      return net;
+    const netTyped = net as bitcoin.Network;
+    if (chainHash.equals(chainHashFromNetwork(netTyped))) {
+      return netTyped;
     }
   }
   return BitcoinNetworks.bitcoin_regtest;
 }
 
-function extractContractInfo(contractInfo) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractContractInfo(contractInfo: any): ContractInfo {
   if (contractInfo.contractDescriptor) {
     return {
       descriptor: contractInfo.contractDescriptor,
       oracleInfo: contractInfo.oracleInfo,
-      totalCollateral: contractInfo.totalCollateral,
+      totalCollateral: contractInfo.totalCollateral as bigint,
       kind: 'single',
     };
   }
@@ -257,12 +314,21 @@ function extractContractInfo(contractInfo) {
   return {
     descriptor: firstPair?.contractDescriptor,
     oracleInfo: firstPair?.oracleInfo,
-    totalCollateral: contractInfo.totalCollateral,
+    totalCollateral: contractInfo.totalCollateral as bigint,
     kind: 'disjoint',
   };
 }
 
-function extractOracleAnnouncement(oracleInfo) {
+interface OracleAnnouncementResult {
+  oraclePublicKey: Buffer;
+  oracleEvent: { serialize: () => Buffer; eventId?: string; eventMaturityEpoch?: number; oracleNonces: Buffer[] };
+  announcementSig: Buffer;
+  getEventId?: () => string;
+  getEventMaturityEpoch?: () => number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractOracleAnnouncement(oracleInfo: any): OracleAnnouncementResult | null {
   if (oracleInfo instanceof SingleOracleInfo) return oracleInfo.announcement;
   if (oracleInfo instanceof MultiOracleInfo) return oracleInfo.announcements?.[0];
   if (oracleInfo?.announcement) return oracleInfo.announcement;
@@ -270,7 +336,15 @@ function extractOracleAnnouncement(oracleInfo) {
   return null;
 }
 
-function buildFundingInputsReport(inputs) {
+interface FundingInputReport {
+  outpoint: string;
+  sats?: bigint;
+}
+
+function buildFundingInputsReport(inputs: Array<{
+  prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+  prevTxVout: number;
+}>): FundingInputReport[] {
   return inputs.map((input) => {
     const txid = input.prevTx.txId.toString();
     const vout = input.prevTxVout;
@@ -283,7 +357,12 @@ function buildFundingInputsReport(inputs) {
   });
 }
 
-function buildPartyParamsInputs(inputs) {
+function buildPartyParamsInputs(inputs: Array<{
+  prevTx: { txId: { toString: () => string } };
+  prevTxVout: number;
+  maxWitnessLen: number;
+  inputSerialId: bigint;
+}>): Array<{ txid: string; vout: number; scriptSig: Buffer; maxWitnessLength: number; serialId: bigint }> {
   return inputs.map((input) => ({
     txid: input.prevTx.txId.toString(),
     vout: input.prevTxVout,
@@ -293,14 +372,21 @@ function buildPartyParamsInputs(inputs) {
   }));
 }
 
-function sumFundingInputAmount(inputs) {
+function sumFundingInputAmount(inputs: Array<{
+  prevTx: { outputs: Array<{ value?: { sats?: bigint } }> };
+  prevTxVout: number;
+}>): bigint {
   return inputs.reduce((sum, input) => {
     const prevOutput = input.prevTx.outputs[input.prevTxVout];
     return sum + BigInt(prevOutput?.value?.sats ?? 0n);
   }, 0n);
 }
 
-function reconstructFundingAddress(offerFundingPubkey, acceptFundingPubkey, network) {
+function reconstructFundingAddress(
+  offerFundingPubkey: Buffer,
+  acceptFundingPubkey: Buffer,
+  network: bitcoin.Network,
+): FundingAddressInfo {
   const pubkeys = [offerFundingPubkey, acceptFundingPubkey].sort(Buffer.compare);
   const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys, network });
   const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms, network });
@@ -312,20 +398,27 @@ function reconstructFundingAddress(offerFundingPubkey, acceptFundingPubkey, netw
   };
 }
 
-function getFundingScriptAndScriptPubKey(offerFundingPubkey, acceptFundingPubkey) {
-  const pubkeys = Buffer.compare(offerFundingPubkey, acceptFundingPubkey) < 0
-    ? [offerFundingPubkey, acceptFundingPubkey]
-    : [acceptFundingPubkey, offerFundingPubkey];
+function getFundingScriptAndScriptPubKey(
+  offerFundingPubkey: Buffer,
+  acceptFundingPubkey: Buffer,
+): { fundingScript: Buffer | undefined; fundingScriptPubKey: Buffer | undefined } {
+  const pubkeys =
+    Buffer.compare(offerFundingPubkey, acceptFundingPubkey) < 0
+      ? [offerFundingPubkey, acceptFundingPubkey]
+      : [acceptFundingPubkey, offerFundingPubkey];
   const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys });
   const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms });
 
   return {
-    fundingScript: p2ms.output,
-    fundingScriptPubKey: p2wsh.output,
+    fundingScript: p2ms.output ? Buffer.from(p2ms.output) : undefined,
+    fundingScriptPubKey: p2wsh.output ? Buffer.from(p2wsh.output) : undefined,
   };
 }
 
-function findFundOutput(outputs, fundingScriptPubKey) {
+function findFundOutput(
+  outputs: Array<{ scriptPubkey?: Buffer; script?: Buffer; value: bigint }>,
+  fundingScriptPubKey: Buffer | undefined,
+): { value: bigint } | null {
   if (!fundingScriptPubKey) return null;
   const targetScriptHex = Buffer.from(fundingScriptPubKey).toString('hex');
   for (const output of outputs) {
@@ -335,7 +428,11 @@ function findFundOutput(outputs, fundingScriptPubKey) {
   return null;
 }
 
-function computeContractIdFromFundingOutpoint(tempContractId, fundTxIdHex, fundOutputIndex) {
+function computeContractIdFromFundingOutpoint(
+  tempContractId: Buffer,
+  fundTxIdHex: string,
+  fundOutputIndex: number,
+): string {
   const fundingTxId = Buffer.from(fundTxIdHex, 'hex');
   if (fundingTxId.length !== 32 || tempContractId.length !== 32) {
     throw new Error('Expected 32-byte fundingTxId and temporaryContractId');
@@ -353,14 +450,25 @@ function computeContractIdFromFundingOutpoint(tempContractId, fundTxIdHex, fundO
   return contractId.toString('hex');
 }
 
-function estimateSingleFundedFee(offer, inCount, outCount, hasWitness) {
-  const varIntSize = (n) => (n < 0xfd ? 1 : 3);
+function estimateSingleFundedFee(
+  offer: {
+    fundingInputs: Array<{ scriptSigLength: () => number; maxWitnessLen: number }>;
+    changeSpk: Buffer;
+    fundOutputSerialId: bigint;
+    changeSerialId: bigint;
+    feeRatePerVb: bigint;
+  },
+  inCount: number,
+  _outCount: number,
+  hasWitness: boolean,
+): bigint {
+  const varIntSize = (n: number): number => (n < 0xfd ? 1 : 3);
   const inputBaseSize = offer.fundingInputs.reduce(
     (sum, input) => sum + 32 + 4 + varIntSize(input.scriptSigLength()) + input.scriptSigLength() + 4,
     0,
   );
   const outputScripts = [
-    { serialId: offer.fundOutputSerialId, scriptHex: null },
+    { serialId: offer.fundOutputSerialId, scriptHex: null as string | null },
     { serialId: offer.changeSerialId, scriptHex: offer.changeSpk.toString('hex') },
   ];
   const outputBaseSize = outputScripts.reduce((sum, out) => {
@@ -372,19 +480,42 @@ function estimateSingleFundedFee(offer, inCount, outCount, hasWitness) {
     4 + // version
     varIntSize(inCount) +
     inputBaseSize +
-    varIntSize(outCount) +
+    varIntSize(2) +
     outputBaseSize +
     4; // locktime
 
   const witnessSize =
-    (hasWitness ? 2 : 0) +
-    offer.fundingInputs.reduce((sum, input) => sum + input.maxWitnessLen, 0);
+    (hasWitness ? 2 : 0) + offer.fundingInputs.reduce((sum, input) => sum + input.maxWitnessLen, 0);
 
   const vbytes = Math.ceil((strippedSize * 4 + witnessSize) / 4);
   return BigInt(vbytes) * offer.feeRatePerVb;
 }
 
-function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress, feeOverride) {
+function tryComputeContractIdFromSingleFunded(
+  offer: {
+    fundingInputs: Array<{
+      prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+      prevTxVout: number;
+      sequence: { value: number };
+      scriptSigLength: () => number;
+      maxWitnessLen: number;
+    }>;
+    offerCollateral: bigint;
+    temporaryContractId: Buffer;
+    changeSpk: Buffer;
+    fundOutputSerialId: bigint;
+    changeSerialId: bigint;
+    feeRatePerVb: bigint;
+    contractInfo: { totalCollateral: bigint };
+  },
+  accept: {
+    acceptCollateral: bigint;
+    fundingInputs: Array<unknown>;
+    fundingPubkey: Buffer;
+  },
+  fundingAddress: FundingAddressInfo,
+  feeOverride?: bigint,
+): SingleFundedComputation | null {
   if (accept.acceptCollateral !== 0n || accept.fundingInputs.length > 0) {
     return null;
   }
@@ -435,7 +566,7 @@ function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress, fee
           cidInternalTxid,
         };
       }
-    } catch (_) {
+    } catch {
       // Fallback to model-based reconstruction below.
     }
   }
@@ -460,13 +591,13 @@ function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress, fee
       serialId: offer.fundOutputSerialId,
       value: offer.contractInfo.totalCollateral,
       scriptHex: fundingAddress.scriptPubKeyHex,
-      kind: 'fund',
+      kind: 'fund' as const,
     },
     {
       serialId: offer.changeSerialId,
       value: offerChange,
       scriptHex: offer.changeSpk.toString('hex'),
-      kind: 'change',
+      kind: 'change' as const,
     },
   ].sort((a, b) => (a.serialId < b.serialId ? -1 : 1));
 
@@ -499,63 +630,18 @@ function tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress, fee
   };
 }
 
-function buildCetTxHexes(offer, accept, descriptor, fundTxId, fundOutputIndex) {
-  if (!(descriptor instanceof EnumeratedDescriptor)) return [];
-
-  const cets = [];
-  const outcomes = descriptor.outcomes || [];
-  const totalCollateral = offer.contractInfo.totalCollateral;
-  const offerSerial = offer.payoutSerialId;
-  const acceptSerial = accept.payoutSerialId;
-
-  for (const outcome of outcomes) {
-    const offerPayout = outcome.localPayout;
-    const acceptPayout = totalCollateral - offerPayout;
-    const outputs = [];
-    if (offerPayout > 0n) {
-      outputs.push({
-        serialId: offerSerial,
-        value: offerPayout,
-        script: offer.payoutSpk,
-      });
-    }
-    if (acceptPayout > 0n) {
-      outputs.push({
-        serialId: acceptSerial,
-        value: acceptPayout,
-        script: accept.payoutSpk,
-      });
-    }
-    outputs.sort((a, b) => (a.serialId < b.serialId ? -1 : 1));
-
-    const tx = new bitcoin.Transaction();
-    tx.version = 2;
-    tx.locktime = offer.cetLocktime;
-    tx.addInput(Buffer.from(fundTxId, 'hex').reverse(), fundOutputIndex, 0xfffffffe, Buffer.alloc(0));
-    for (const output of outputs) {
-      tx.addOutput(Buffer.from(output.script), BigInt(output.value));
-    }
-    cets.push(tx.toHex());
-  }
-
-  return cets;
-}
-
-async function initCfd() {
-  // Tier 2 now uses DDK (ddk-ts native binary) for adaptor sig verification.
+async function initCfd(): Promise<DdkModule> {
+  // Tier 2 uses DDK (ddk-ts native binary) for adaptor sig verification.
   // Probe for ddk-ts native binary (arm64 or x64)
   const ddkPaths = [
-    path.join(__dirname, 'node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node'),
-    path.join(__dirname, 'node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-x64.node'),
-    path.join(__dirname, 'node_modules/@bennyblader/ddk-ts/dist/ddk-ts.linux-x64-gnu.node'),
+    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node'),
+    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-x64.node'),
+    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.linux-x64-gnu.node'),
   ];
-  // Also check orange-grove's pnpm store as fallback
-  const ogDdkPath = path.resolve(__dirname, '../lygos/orange-grove/node_modules/.pnpm/@bennyblader+ddk-ts@0.3.32/node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node');
-  ddkPaths.push(ogDdkPath);
 
   for (const ddkPath of ddkPaths) {
     if (!fs.existsSync(ddkPath)) continue;
-    const m = { exports: {} };
+    const m = { exports: {} as DdkModule };
     process.dlopen(m, ddkPath);
     return m.exports;
   }
@@ -563,7 +649,7 @@ async function initCfd() {
   throw new Error('Could not find ddk-ts native binary for Tier 2 verification');
 }
 
-function getTaggedOutcomeHash(outcomeText) {
+function getTaggedOutcomeHash(outcomeText: string): Buffer {
   const tag = Buffer.from('DLC/oracle/attestation/v0', 'utf8');
   const tagHash = crypto.createHash('sha256').update(tag).digest();
   const outcomeBytes = Buffer.from(outcomeText, 'utf8');
@@ -573,8 +659,17 @@ function getTaggedOutcomeHash(outcomeText) {
     .digest();
 }
 
-async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement) {
-  const result = {
+async function tryTier2(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offer: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  accept: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  descriptor: any,
+  _fundingAddress: FundingAddressInfo,
+  oracleAnnouncement: OracleAnnouncementResult | null,
+): Promise<Tier2Result> {
+  const result: Tier2Result = {
     available: false,
     note: '',
     fundTxId: null,
@@ -588,7 +683,7 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
   };
 
   try {
-    const ddk = await initCfd(); // now returns ddk-ts native module
+    const ddk = await initCfd();
     if (!(descriptor instanceof EnumeratedDescriptor)) {
       throw new Error('Tier 2 currently supports EnumeratedDescriptor contracts only');
     }
@@ -597,42 +692,81 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       throw new Error('Missing oracle announcement pubkey/nonce for adaptor verification');
     }
 
+    const offerTyped = offer as {
+      fundingPubkey: Buffer;
+      changeSpk: Buffer;
+      changeSerialId: bigint;
+      payoutSpk: Buffer;
+      payoutSerialId: bigint;
+      fundingInputs: Array<{
+        prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+        prevTxVout: number;
+        maxWitnessLen: number;
+        inputSerialId: bigint;
+      }>;
+      offerCollateral: bigint;
+      refundLocktime: number;
+      feeRatePerVb: bigint;
+      cetLocktime: number;
+      fundOutputSerialId: bigint;
+      contractInfo: { totalCollateral: bigint };
+    };
+
+    const acceptTyped = accept as {
+      fundingPubkey: Buffer;
+      changeSpk: Buffer;
+      changeSerialId: bigint;
+      payoutSpk: Buffer;
+      payoutSerialId: bigint;
+      fundingInputs: Array<{
+        prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+        prevTxVout: number;
+        maxWitnessLen: number;
+        inputSerialId: bigint;
+      }>;
+      acceptCollateral: bigint;
+      cetAdaptorSignatures?: { sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }> } | Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
+    };
+
     // Build DLC transactions via DDK (deterministic reconstruction)
-    const outcomes = descriptor.outcomes.map((o) => ({
+    const outcomes = descriptor.outcomes.map((o: { outcome: string; localPayout: bigint }) => ({
       offer: BigInt(o.localPayout),
-      accept: BigInt(offer.contractInfo.totalCollateral) - BigInt(o.localPayout),
+      accept: BigInt(offerTyped.contractInfo.totalCollateral) - BigInt(o.localPayout),
     }));
 
-    // CRITICAL: use toString() for display-order txid, NOT toString('hex')
-    const localParams = {
-      fundPubkey: offer.fundingPubkey,
-      changeScriptPubkey: offer.changeSpk,
-      changeSerialId: BigInt(offer.changeSerialId),
-      payoutScriptPubkey: offer.payoutSpk,
-      payoutSerialId: BigInt(offer.payoutSerialId),
-      inputs: buildPartyParamsInputs(offer.fundingInputs),
-      inputAmount: sumFundingInputAmount(offer.fundingInputs),
-      collateral: BigInt(offer.offerCollateral),
+    const localParams: PartyParams = {
+      fundPubkey: offerTyped.fundingPubkey,
+      changeScriptPubkey: offerTyped.changeSpk,
+      changeSerialId: BigInt(offerTyped.changeSerialId),
+      payoutScriptPubkey: offerTyped.payoutSpk,
+      payoutSerialId: BigInt(offerTyped.payoutSerialId),
+      inputs: buildPartyParamsInputs(offerTyped.fundingInputs),
+      inputAmount: sumFundingInputAmount(offerTyped.fundingInputs),
+      collateral: BigInt(offerTyped.offerCollateral),
       dlcInputs: [],
     };
 
-    // Build remote params (accepter may have 0 collateral in single-funded model)
-    const remoteParams = {
-      fundPubkey: accept.fundingPubkey,
-      changeScriptPubkey: accept.changeSpk,
-      changeSerialId: BigInt(accept.changeSerialId),
-      payoutScriptPubkey: accept.payoutSpk,
-      payoutSerialId: BigInt(accept.payoutSerialId),
-      inputs: buildPartyParamsInputs(accept.fundingInputs),
-      inputAmount: sumFundingInputAmount(accept.fundingInputs),
-      collateral: BigInt(accept.acceptCollateral),
+    const remoteParams: PartyParams = {
+      fundPubkey: acceptTyped.fundingPubkey,
+      changeScriptPubkey: acceptTyped.changeSpk,
+      changeSerialId: BigInt(acceptTyped.changeSerialId),
+      payoutScriptPubkey: acceptTyped.payoutSpk,
+      payoutSerialId: BigInt(acceptTyped.payoutSerialId),
+      inputs: buildPartyParamsInputs(acceptTyped.fundingInputs),
+      inputAmount: sumFundingInputAmount(acceptTyped.fundingInputs),
+      collateral: BigInt(acceptTyped.acceptCollateral),
       dlcInputs: [],
     };
 
     const dlcTxs = ddk.createDlcTransactions(
-      outcomes, localParams, remoteParams,
-      offer.refundLocktime, BigInt(offer.feeRatePerVb), 0,
-      offer.cetLocktime, BigInt(offer.fundOutputSerialId),
+      outcomes,
+      localParams,
+      remoteParams,
+      offerTyped.refundLocktime,
+      BigInt(offerTyped.feeRatePerVb),
+      0,
+      offerTyped.cetLocktime,
+      BigInt(offerTyped.fundOutputSerialId),
     );
 
     // Compute fund txid from DDK-built fund transaction
@@ -644,21 +778,26 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       .toString('hex');
 
     // Build tagged attestation messages: Array<Array<Array<Buffer>>> (per-CET → per-oracle → msgs)
-    const messagesForDdk = descriptor.outcomes.map((o) => [[getTaggedOutcomeHash(o.outcome)]]);
+    const messagesForDdk = descriptor.outcomes.map((o: { outcome: string }) => [[getTaggedOutcomeHash(o.outcome)]]);
 
     const { fundingScript, fundingScriptPubKey } = getFundingScriptAndScriptPubKey(
-      offer.fundingPubkey,
-      accept.fundingPubkey,
+      offerTyped.fundingPubkey,
+      acceptTyped.fundingPubkey,
     );
 
-    const oracleInfo = [{
-      publicKey: oracleAnnouncement.oraclePublicKey,
-      nonces: oracleAnnouncement.oracleEvent.oracleNonces,
-    }];
+    const oracleInfo = [
+      {
+        publicKey: oracleAnnouncement.oraclePublicKey,
+        nonces: oracleAnnouncement.oracleEvent.oracleNonces,
+      },
+    ];
 
     // Adaptor pairs: for enum contracts, concat encryptedSig + dleqProof into signature field
-    const adaptorSigs = accept.cetAdaptorSignatures?.sigs || accept.cetAdaptorSignatures || [];
-    const adaptorPairs = adaptorSigs.map((sig) => ({
+    const adaptorSigsRaw = acceptTyped.cetAdaptorSignatures;
+    const adaptorSigs = Array.isArray(adaptorSigsRaw)
+      ? adaptorSigsRaw
+      : (adaptorSigsRaw?.sigs || []);
+    const adaptorPairs = adaptorSigs.map((sig: { encryptedSig: Buffer; dleqProof: Buffer }) => ({
       signature: Buffer.concat([sig.encryptedSig, sig.dleqProof]),
       proof: Buffer.from(''),
     }));
@@ -672,8 +811,8 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       adaptorPairs,
       dlcTxs.cets,
       oracleInfo,
-      accept.fundingPubkey,
-      fundingScript,
+      acceptTyped.fundingPubkey,
+      fundingScript!,
       fundOutput.value,
       messagesForDdk,
     );
@@ -690,13 +829,19 @@ async function tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnounc
       : 'Adaptor signature verification failed';
     return result;
   } catch (err) {
-    result.note = `Tier 2 unavailable: ${err.message}`;
+    result.note = `Tier 2 unavailable: ${(err as Error).message}`;
     return result;
   }
 }
 
-async function main() {
-  const { offerHex, acceptHex, expectedOraclePubkey } = parseCliArgs(process.argv.slice(2));
+async function main(): Promise<void> {
+  const { offerHex, acceptHex, expectedOraclePubkey, showHelp } = parseCliArgs(process.argv.slice(2));
+
+  if (showHelp) {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
+
   const normalizedExpectedOraclePubkey = normalizeOraclePubkeyHex(expectedOraclePubkey);
   const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
   const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
@@ -713,11 +858,11 @@ async function main() {
   const fundingAddress = reconstructFundingAddress(offer.fundingPubkey, accept.fundingPubkey, network);
 
   let contractType = 'unknown';
-  let outcomes = [];
+  let outcomes: Array<{ label: string; offererSats: bigint; accepterSats: bigint }> = [];
 
   if (descriptor instanceof EnumeratedDescriptor) {
     contractType = 'Enumerated';
-    outcomes = descriptor.outcomes.map((o) => ({
+    outcomes = descriptor.outcomes.map((o: { outcome: string; localPayout: bigint }) => ({
       label: o.outcome,
       offererSats: o.localPayout,
       accepterSats: totalCollateral - o.localPayout,
@@ -747,12 +892,16 @@ async function main() {
       oracleSigValid = true;
       oracleSigError = '';
     } catch (e) {
-      oracleSigError = e.message;
+      oracleSigError = (e as Error).message;
     }
   }
 
   const tier2 = await tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
-  const singleFundedComputation = tryComputeContractIdFromSingleFunded(offer, accept, fundingAddress);
+  const singleFundedComputation = tryComputeContractIdFromSingleFunded(
+    offer as Parameters<typeof tryComputeContractIdFromSingleFunded>[0],
+    accept as Parameters<typeof tryComputeContractIdFromSingleFunded>[1],
+    fundingAddress,
+  );
 
   let computedContractId = 'n/a';
   if (tier2.computedContractId) {
@@ -761,18 +910,19 @@ async function main() {
     computedContractId = `${singleFundedComputation.cidRpcTxid} (rpc-txid convention)`;
   } else {
     const embeddedIds = [
-      ...offer.fundingInputs.map((i) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
-      ...accept.fundingInputs.map((i) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+      ...offer.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
+      ...accept.fundingInputs.map((i: { dlcInput?: { contractId?: Buffer } }) => i.dlcInput?.contractId?.toString('hex')).filter(Boolean),
     ];
     if (embeddedIds.length > 0) {
       const unique = [...new Set(embeddedIds)];
-      computedContractId = unique.length === 1
-        ? `${unique[0]} (from embedded DlcInput)`
-        : `${unique.join(', ')} (embedded DlcInput values differ)`;
+      computedContractId =
+        unique.length === 1
+          ? `${unique[0]} (from embedded DlcInput)`
+          : `${unique.join(', ')} (embedded DlcInput values differ)`;
     }
   }
 
-  const lines = [];
+  const lines: string[] = [];
   lines.push('DLC Verification Report');
   lines.push('=======================');
   lines.push('');
@@ -794,11 +944,15 @@ async function main() {
   lines.push(`Oracle pubkey source: ${oraclePubkeySource}`);
   if (normalizedExpectedOraclePubkey) {
     lines.push(`Oracle pubkey extracted from DLC: ${extractedOraclePubkey}`);
-    lines.push(`Oracle pubkey match: ${oraclePubkeyMatchesExpected ? 'matches provided oracle pubkey' : 'DOES NOT MATCH provided oracle pubkey'}`);
+    lines.push(
+      `Oracle pubkey match: ${oraclePubkeyMatchesExpected ? 'matches provided oracle pubkey' : 'DOES NOT MATCH provided oracle pubkey'}`,
+    );
   }
   lines.push(`Oracle event ID: ${oracleEventId}`);
   lines.push(`Oracle announcement Schnorr signature: ${oracleSigValid ? 'valid' : `invalid (${oracleSigError})`}`);
-  lines.push(`Loan maturity date: ${locktimeToHuman(offer.cetLocktime)}${eventMaturityEpoch ? ` (oracle event maturity: ${locktimeToHuman(eventMaturityEpoch)})` : ''}`);
+  lines.push(
+    `Loan maturity date: ${locktimeToHuman(offer.cetLocktime)}${eventMaturityEpoch ? ` (oracle event maturity: ${locktimeToHuman(eventMaturityEpoch)})` : ''}`,
+  );
   lines.push(`Refund locktime: ${locktimeToHuman(offer.refundLocktime)}`);
   lines.push(`Fee rate: ${offer.feeRatePerVb.toString()} sat/vB`);
   lines.push('');
@@ -855,13 +1009,10 @@ async function main() {
   console.log(lines.join('\n'));
 }
 
-// Export for server usage
-module.exports = { verifyDlc };
-
 // CLI entry point
 if (require.main === module) {
   main().catch((err) => {
-    console.error(err.message);
+    console.error((err as Error).message);
     process.exit(1);
   });
 }
