@@ -41,27 +41,37 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 
 ---
 
-## Quick start
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+ required
+- pnpm (recommended) or npm
+
+### Install
 
 ```bash
-npm install
-node verify.js
+pnpm install
+pnpm run build  # Compile TypeScript
 ```
 
-The CLI has sample offer/accept hex hardcoded in `verify.js` for testing, but you can also pass your own values:
+### Run Web UI
 
 ```bash
-node verify.js --offer <offer_hex> --accept <accept_hex>
-node verify.js --offer <offer_hex> --accept <accept_hex> --oracle-pubkey <xonly_pubkey>
+pnpm start
+# Open http://localhost:3456
 ```
 
-To use the browser UI locally:
+### Run CLI
 
 ```bash
-node server.js
+pnpm run verify              # Use sample data
+pnpm run verify -- --help    # Show help
+pnpm run verify -- --offer <hex> --accept <hex>
+pnpm run verify -- --offer <hex> --accept <hex> --oracle-pubkey <xonly_pubkey>
 ```
 
-Then open `http://localhost:3456`.
+Sample offer/accept hex is stored in `examples/sample.json` for testing.
 
 **Expected output:**
 
@@ -121,7 +131,18 @@ The verification steps:
 ## Architecture
 
 ```
-verify.js
+src/
+├── verify.ts          # Main verification logic (CLI + library)
+├── server.ts          # Express web server
+└── types.ts           # TypeScript interfaces
+
+examples/
+└── sample.json        # Sample DLC offer/accept hex for testing
+
+public/
+└── index.html         # Web UI
+
+Verification tiers:
 ├── Tier 1: @node-dlc/messaging deserialization
 │   ├── DlcOffer.deserialize(hex)
 │   ├── DlcAccept.deserialize(hex)

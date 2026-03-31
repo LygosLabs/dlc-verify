@@ -1,15 +1,32 @@
 {
   "name": "dlc-verify",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Open-source DLC verification tool for independently verifying Discreet Log Contract messages before signing",
+  "main": "dist/verify.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "verify": "node verify.js"
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "verify": "node dist/verify.js",
+    "dev": "tsc --watch",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "dlc",
+    "bitcoin",
+    "discreet-log-contracts",
+    "verification",
+    "adaptor-signatures"
+  ],
+  "author": "Lygos Labs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LygosLabs/dlc-verify"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "type": "commonjs",
   "dependencies": {
     "@atomicfinance/bitcoin-cfd-provider": "^4.2.7",
@@ -22,5 +39,11 @@
     "cfd-dlc-js-wasm": "github:atomicfinance/cfd-dlc-js-wasm#v1.0.6",
     "cfd-js-wasm": "github:atomicfinance/cfd-js-wasm#v0.4.10",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
   }
 }
