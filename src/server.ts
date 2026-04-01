@@ -12,10 +12,11 @@ interface VerifyRequestBody {
   offer?: string;
   accept?: string;
   expectedOraclePubkey?: string;
+  signHex?: string;
 }
 
 app.post('/api/verify', async (req: Request<object, object, VerifyRequestBody>, res: Response): Promise<void> => {
-  const { offer, accept, expectedOraclePubkey } = req.body;
+  const { offer, accept, expectedOraclePubkey, signHex } = req.body;
 
   if (!offer || !accept) {
     res.status(400).json({ error: 'Missing offer or accept hex' });
@@ -23,7 +24,7 @@ app.post('/api/verify', async (req: Request<object, object, VerifyRequestBody>, 
   }
 
   try {
-    const result = await verifyDlc(offer, accept, { expectedOraclePubkey });
+    const result = await verifyDlc(offer, accept, { expectedOraclePubkey, signHex });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
