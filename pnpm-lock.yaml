@@ -20,9 +20,15 @@ importers:
       '@bennyblader/ddk-ts':
         specifier: ^0.3.35
         version: 0.3.35
+      '@node-dlc/core':
+        specifier: ^1.1.7
+        version: 1.1.7
       '@node-dlc/messaging':
         specifier: ^1.1.7
         version: 1.1.7
+      bip-schnorr:
+        specifier: ^0.6.7
+        version: 0.6.7
       bitcoin-networks:
         specifier: ^1.0.0
         version: 1.0.0
@@ -578,6 +584,10 @@ packages:
 
   bip-schnorr@0.6.3:
     resolution: {integrity: sha512-aScZ6wkbhxki/WhVghCPUTT0Uwar9FJ0tpFPhj5LcyFhtuFDsLvb0uNvwEVAVMBe8pHdjfNMvylBjksPdorRhA==}
+    engines: {node: '>=8.0.0'}
+
+  bip-schnorr@0.6.7:
+    resolution: {integrity: sha512-Pf1o+whA52l7NC33CZY4eRtcB+dUCT54hKCF8mnw2349CG89LOXODHRWmUEcSSWzoi+Kjg1CtMmw6uV43tmJFA==}
     engines: {node: '>=8.0.0'}
 
   bip174@2.1.1:
@@ -1886,6 +1896,14 @@ snapshots:
       safe-buffer: 5.2.1
 
   bip-schnorr@0.6.3:
+    dependencies:
+      bigi: 1.4.2
+      ecurve: 1.0.6
+      js-sha256: 0.9.0
+      randombytes: 2.1.0
+      safe-buffer: 5.2.1
+
+  bip-schnorr@0.6.7:
     dependencies:
       bigi: 1.4.2
       ecurve: 1.0.6
