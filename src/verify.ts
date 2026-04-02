@@ -279,8 +279,8 @@ export async function verifyDlc(
     result.adaptorTotalCount = adaptorResult.adaptorTotalCount;
     result.adaptorError = adaptorResult.adaptorError;
 
-    // Use computed contract ID from adaptor verification if available
-    if (adaptorResult.computedContractId && !result.contractId) {
+    // Prefer DDK-computed contract ID (uses the authoritative funding tx)
+    if (adaptorResult.computedContractId) {
       result.contractId = adaptorResult.computedContractId;
     }
 
@@ -850,9 +850,22 @@ async function verifyAdaptorSignatures(
       proof: Buffer.from(''),
     }));
 
-    const fundOutput = findFundOutput(dlcTxs.fund.outputs, fundingScriptPubKey);
-    if (!fundOutput) {
+    const fundOutputIndex = dlcTxs.fund.outputs.findIndex((output: { scriptPubkey?: Buffer; script?: Buffer }) => {
+      const outputScriptHex = Buffer.from(output.scriptPubkey ?? output.script ?? []).toString('hex');
+      return fundingScriptPubKey ? outputScriptHex === Buffer.from(fundingScriptPubKey).toString('hex') : false;
+    });
+    const fundOutput = fundOutputIndex >= 0 ? dlcTxs.fund.outputs[fundOutputIndex] : null;
+    if (!fundOutput || fundOutputIndex < 0) {
       throw new Error('Could not locate fund output in reconstructed funding transaction');
+    }
+
+    // Compute contract ID from DDK-built funding tx (authoritative source)
+    if (offer.temporaryContractId && fundTxId) {
+      result.computedContractId = computeContractIdFromFundingOutpoint(
+        offer.temporaryContractId,
+        fundTxId,
+        fundOutputIndex,
+      );
     }
 
     const isValid = ddk.verifyCetAdaptorSigsFromOracleInfo(
