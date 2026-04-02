@@ -6,6 +6,22 @@ DLC Verify is currently focused on Lygos-style enumerated loan DLCs, but it is d
 
 ---
 
+## Screenshots
+
+**Paste your DLC messages:**
+
+![Input form](assets/input_form.png)
+
+**Valid verification result:**
+
+![Valid verification](assets/verification_valid.png)
+
+**Oracle pubkey mismatch detected:**
+
+![Oracle mismatch](assets/verification_mismatch.png)
+
+---
+
 ## Why this exists
 
 DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer` or `DlcAccept`, there is usually no easy way to inspect what it actually encodes without specialized tooling. DLC Verify closes that gap.
