@@ -772,7 +772,7 @@
             } else if (result.adaptorValid === false) {
                 setProofStep('adaptorSig', false, result.adaptorError || 'Verification failed');
             } else {
-                setProofStep('adaptorSig', null, result.tier2Note || 'Not available');
+                setProofStep('adaptorSig', null, result.adaptorSigVerificationNote || 'Not available');
             }
 
             // Identifiers & Scripts

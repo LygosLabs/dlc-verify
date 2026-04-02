@@ -39,10 +39,10 @@ describe('DLC Verification', () => {
       expect(result.oracleSigValid).toBe(true);
     });
 
-    it('should successfully verify CET adaptor signatures (Tier 2)', async () => {
+    it('should successfully verify CET adaptor signatures', async () => {
       const result = await verifyDlc(sampleOffer, sampleAccept);
 
-      expect(result.tier2Available).toBe(true);
+      expect(result.adaptorSigVerificationAvailable).toBe(true);
       expect(result.adaptorValid).toBe(true);
       expect(result.adaptorValidCount).toBeGreaterThan(0);
       expect(result.adaptorValidCount).toBe(result.adaptorTotalCount);
@@ -98,7 +98,7 @@ describe('DLC Verification', () => {
       // The offer collateral should reflect the modified value
       expect(result.offerCollateral).toBe(modifiedCollateral.toString());
 
-      // Adaptor signatures should either fail (false) or tier2 not be available (null)
+      // Adaptor signatures should either fail (false) or verification not be available (null)
       // because modifying collateral changes the CET outputs
       expect(result.adaptorValid !== true).toBe(true);
     });
@@ -111,7 +111,7 @@ describe('DLC Verification', () => {
       // The funding pubkey should reflect the modified value
       expect(result.offererFundingPubkey).toBe(randomPubkey.toString('hex'));
 
-      // Adaptor signatures should either fail (false) or tier2 not be available (null)
+      // Adaptor signatures should either fail (false) or verification not be available (null)
       // because the funding script changed
       expect(result.adaptorValid !== true).toBe(true);
     });
@@ -124,7 +124,7 @@ describe('DLC Verification', () => {
       // The funding pubkey should reflect the modified value
       expect(result.accepterFundingPubkey).toBe(randomPubkey.toString('hex'));
 
-      // Adaptor signatures should either fail (false) or tier2 not be available (null)
+      // Adaptor signatures should either fail (false) or verification not be available (null)
       // because the funding script changed
       expect(result.adaptorValid !== true).toBe(true);
     });

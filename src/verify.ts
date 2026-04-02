@@ -21,6 +21,7 @@ const {
 } = require('@node-dlc/messaging');
 
 import type {
+  AdaptorVerificationResult,
   CliArgs,
   ContractInfo,
   DdkModule,
@@ -30,7 +31,6 @@ import type {
   PartyParams,
   SampleData,
   SingleFundedComputation,
-  Tier2Result,
   VerificationResult,
   VerifyOptions,
 } from './types';
@@ -54,9 +54,9 @@ Examples:
   node dist/verify.js --offer <hex> --accept <hex> # Verify custom DLC
   node dist/verify.js --offer <hex> --accept <hex> --oracle-pubkey <hex>
 
-The tool performs two tiers of verification:
-  Tier 1: Structural verification (collateral, outcomes, oracle info)
-  Tier 2: Cryptographic verification (CET adaptor signatures via DDK)
+The tool performs two levels of verification:
+  Structural: Message parsing (collateral, outcomes, oracle info)
+  Cryptographic: CET adaptor signature verification via DDK
 `.trim();
 
 function loadSampleData(): SampleData {
@@ -125,7 +125,7 @@ export async function verifyDlc(
   options: VerifyOptions = {},
 ): Promise<VerificationResult> {
   const result: VerificationResult = {
-    // Tier 1
+    // Structural verification
     contractType: null,
     totalCollateral: null,
     offerCollateral: null,
@@ -149,16 +149,16 @@ export async function verifyDlc(
     offerInputs: [],
     acceptInputs: [],
     contractId: null,
-    // Tier 2
-    tier2Available: false,
-    tier2Note: null,
+    // Adaptor signature verification
+    adaptorSigVerificationAvailable: false,
+    adaptorSigVerificationNote: null,
     fundTxId: null,
     cetCount: null,
     adaptorValid: null,
     adaptorValidCount: 0,
     adaptorTotalCount: 0,
     adaptorError: null,
-    // Tier 3 - Sign verification
+    // Sign message verification
     signAvailable: false,
     signContractId: null,
     signContractIdMatches: null,
@@ -268,23 +268,23 @@ export async function verifyDlc(
       }
     }
 
-    // Tier 2 verification
-    const tier2 = await tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
-    result.tier2Available = tier2.available;
-    result.tier2Note = tier2.note || null;
-    result.fundTxId = tier2.fundTxId;
-    result.cetCount = tier2.cetCount;
-    result.adaptorValid = tier2.adaptorValid;
-    result.adaptorValidCount = tier2.adaptorValidCount;
-    result.adaptorTotalCount = tier2.adaptorTotalCount;
-    result.adaptorError = tier2.adaptorError;
+    // Adaptor signature verification
+    const adaptorResult = await verifyAdaptorSignatures(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
+    result.adaptorSigVerificationAvailable = adaptorResult.available;
+    result.adaptorSigVerificationNote = adaptorResult.note || null;
+    result.fundTxId = adaptorResult.fundTxId;
+    result.cetCount = adaptorResult.cetCount;
+    result.adaptorValid = adaptorResult.adaptorValid;
+    result.adaptorValidCount = adaptorResult.adaptorValidCount;
+    result.adaptorTotalCount = adaptorResult.adaptorTotalCount;
+    result.adaptorError = adaptorResult.adaptorError;
 
-    // Use computed contract ID from tier2 if available
-    if (tier2.computedContractId && !result.contractId) {
-      result.contractId = tier2.computedContractId;
+    // Use computed contract ID from adaptor verification if available
+    if (adaptorResult.computedContractId && !result.contractId) {
+      result.contractId = adaptorResult.computedContractId;
     }
 
-    // Tier 3 - Sign message verification
+    // Sign message verification
     if (options.signHex) {
       try {
         const sign = DlcSign.deserialize(Buffer.from(options.signHex, 'hex'));
@@ -296,8 +296,8 @@ export async function verifyDlc(
           result.signContractIdMatches = result.signContractId === result.contractId;
         }
 
-        // Verify offerer's CET adaptor signatures using same method as tier2
-        if (tier2.available && sign.cetAdaptorSignatures?.sigs) {
+        // Verify offerer's CET adaptor signatures
+        if (adaptorResult.available && sign.cetAdaptorSignatures?.sigs) {
           try {
             const signAdaptorSigs = sign.cetAdaptorSignatures.sigs;
             result.signAdaptorTotalCount = signAdaptorSigs.length;
@@ -674,8 +674,8 @@ function tryComputeContractIdFromSingleFunded(
   };
 }
 
-async function initCfd(): Promise<DdkModule> {
-  // Tier 2 uses DDK (ddk-ts native binary) for adaptor sig verification.
+async function initDdk(): Promise<DdkModule> {
+  // DDK (ddk-ts native binary) provides adaptor signature verification.
   // Probe for ddk-ts native binary (arm64 or x64)
   const ddkPaths = [
     path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node'),
@@ -690,7 +690,7 @@ async function initCfd(): Promise<DdkModule> {
     return m.exports;
   }
 
-  throw new Error('Could not find ddk-ts native binary for Tier 2 verification');
+  throw new Error('Could not find ddk-ts native binary for adaptor signature verification');
 }
 
 function getTaggedOutcomeHash(outcomeText: string): Buffer {
@@ -703,7 +703,7 @@ function getTaggedOutcomeHash(outcomeText: string): Buffer {
     .digest();
 }
 
-async function tryTier2(
+async function verifyAdaptorSignatures(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   offer: any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -712,8 +712,8 @@ async function tryTier2(
   descriptor: any,
   _fundingAddress: FundingAddressInfo,
   oracleAnnouncement: OracleAnnouncementResult | null,
-): Promise<Tier2Result> {
-  const result: Tier2Result = {
+): Promise<AdaptorVerificationResult> {
+  const result: AdaptorVerificationResult = {
     available: false,
     note: '',
     fundTxId: null,
@@ -727,9 +727,9 @@ async function tryTier2(
   };
 
   try {
-    const ddk = await initCfd();
+    const ddk = await initDdk();
     if (!(descriptor instanceof EnumeratedDescriptor)) {
-      throw new Error('Tier 2 currently supports EnumeratedDescriptor contracts only');
+      throw new Error('Adaptor signature verification currently supports EnumeratedDescriptor contracts only');
     }
 
     if (!oracleAnnouncement?.oraclePublicKey || !oracleAnnouncement?.oracleEvent?.oracleNonces?.length) {
@@ -877,7 +877,7 @@ async function tryTier2(
       : 'Adaptor signature verification failed';
     return result;
   } catch (err) {
-    result.note = `Tier 2 unavailable: ${(err as Error).message}`;
+    result.note = `Adaptor verification unavailable: ${(err as Error).message}`;
     return result;
   }
 }
@@ -945,7 +945,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const tier2 = await tryTier2(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
+  const adaptorResult = await verifyAdaptorSignatures(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
   const singleFundedComputation = tryComputeContractIdFromSingleFunded(
     offer as Parameters<typeof tryComputeContractIdFromSingleFunded>[0],
     accept as Parameters<typeof tryComputeContractIdFromSingleFunded>[1],
@@ -953,8 +953,8 @@ async function main(): Promise<void> {
   );
 
   let computedContractId = 'n/a';
-  if (tier2.computedContractId) {
-    computedContractId = tier2.computedContractId;
+  if (adaptorResult.computedContractId) {
+    computedContractId = adaptorResult.computedContractId;
   } else if (singleFundedComputation) {
     computedContractId = `${singleFundedComputation.cidRpcTxid} (rpc-txid convention)`;
   } else {
@@ -1033,29 +1033,29 @@ async function main(): Promise<void> {
   }
 
   lines.push('');
-  lines.push('Tier 2 status:');
-  if (tier2.available) {
-    if (tier2.fundTxId) lines.push(`  Fund TX ID: ${tier2.fundTxId}`);
-    if (tier2.cetCount !== null) lines.push(`  CET count: ${tier2.cetCount}`);
-    if (tier2.adaptorValid === true) {
+  lines.push('Adaptor signature verification:');
+  if (adaptorResult.available) {
+    if (adaptorResult.fundTxId) lines.push(`  Fund TX ID: ${adaptorResult.fundTxId}`);
+    if (adaptorResult.cetCount !== null) lines.push(`  CET count: ${adaptorResult.cetCount}`);
+    if (adaptorResult.adaptorValid === true) {
       lines.push(
-        `  CET adaptor signatures: CRYPTOGRAPHICALLY VALID (${tier2.adaptorValidCount}/${tier2.adaptorTotalCount})`,
+        `  CET adaptor signatures: CRYPTOGRAPHICALLY VALID (${adaptorResult.adaptorValidCount}/${adaptorResult.adaptorTotalCount})`,
       );
     }
-    if (tier2.adaptorValid === false) {
+    if (adaptorResult.adaptorValid === false) {
       lines.push(
-        `  CET adaptor signatures: CRYPTOGRAPHICALLY INVALID (${tier2.adaptorValidCount}/${tier2.adaptorTotalCount})${tier2.adaptorError ? ` - ${tier2.adaptorError}` : ''}`,
+        `  CET adaptor signatures: CRYPTOGRAPHICALLY INVALID (${adaptorResult.adaptorValidCount}/${adaptorResult.adaptorTotalCount})${adaptorResult.adaptorError ? ` - ${adaptorResult.adaptorError}` : ''}`,
       );
     }
-    if (tier2.refundSigValid === true) lines.push('  Refund signature: CRYPTOGRAPHICALLY VALID');
-    if (tier2.refundSigValid === false) lines.push('  Refund signature: CRYPTOGRAPHICALLY INVALID');
-    if (tier2.note) lines.push(`  Note: ${tier2.note}`);
+    if (adaptorResult.refundSigValid === true) lines.push('  Refund signature: CRYPTOGRAPHICALLY VALID');
+    if (adaptorResult.refundSigValid === false) lines.push('  Refund signature: CRYPTOGRAPHICALLY INVALID');
+    if (adaptorResult.note) lines.push(`  Note: ${adaptorResult.note}`);
   } else {
-    lines.push(`  ${tier2.note}`);
-    lines.push(`  Adaptor signatures: CRYPTOGRAPHICALLY INVALID (${tier2.note})`);
+    lines.push(`  ${adaptorResult.note}`);
+    lines.push(`  Adaptor signatures: CRYPTOGRAPHICALLY INVALID (${adaptorResult.note})`);
   }
 
-  if (!tier2.available || !tier2.fundTxId) {
+  if (!adaptorResult.available || !adaptorResult.fundTxId) {
     lines.push('  Contract ID from funding outpoint formula requires reconstructed fund tx + output index.');
   }
 
