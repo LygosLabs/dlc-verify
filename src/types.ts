@@ -45,6 +45,15 @@ export interface VerificationResult {
   adaptorTotalCount: number;
   adaptorError: string | null;
 
+  // Tier 3 - Sign message verification (when sign hex provided)
+  signAvailable: boolean;
+  signContractId: string | null;
+  signContractIdMatches: boolean | null;
+  signAdaptorValid: boolean | null;
+  signAdaptorValidCount: number;
+  signAdaptorTotalCount: number;
+  signAdaptorError: string | null;
+
   // Errors
   error: string | null;
 }
@@ -64,6 +73,7 @@ export interface Tier2Result {
 
 export interface VerifyOptions {
   expectedOraclePubkey?: string;
+  signHex?: string;
 }
 
 export interface CliArgs {
