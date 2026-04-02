@@ -21,7 +21,7 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 
 ## What it verifies
 
-### Tier 1 — Structural (pure JavaScript, no native code)
+### Structural verification (message parsing)
 
 - Contract type and collateral amounts
 - All outcome payouts (e.g. `repaid`, `liquidated-by-price-threshold`)
@@ -33,7 +33,7 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Funding inputs from offerer and accepter
 - Contract ID (computed, both RPC and internal-txid conventions)
 
-### Tier 2 — Cryptographic (requires DDK native binary)
+### Adaptor signature verification (cryptographic)
 
 - Deterministically reconstructs the fund transaction and all CETs from the offer/accept parameters
 - Verifies all CET ECDSA adaptor signatures against the oracle's announced nonce and pubkey
@@ -82,7 +82,7 @@ DLC Verification Report
 Contract type: Enumerated
 Total collateral: 0.00020000 BTC (20000 sats)
 ...
-Tier 2 status:
+Adaptor signature verification:
   Fund TX ID: fdc7dfe8...
   CET count: 4
   CET adaptor signatures: CRYPTOGRAPHICALLY VALID (4/4)
@@ -92,19 +92,19 @@ Tier 2 status:
 
 ## Dependencies
 
-| Package | Purpose | Notes |
-|---|---|---|
-| `@node-dlc/messaging` | DLC message deserialization | Tier 1 |
-| `bitcoinjs-lib` | P2WSH address reconstruction | Tier 1 |
-| `bitcoin-networks` | Chain hash detection (mainnet/regtest) | Tier 1 |
-| `bip-schnorr` | Oracle announcement Schnorr sig verification | Tier 1 |
-| `@bennyblader/ddk-ts` | ECDSA adaptor sig verification via DDK | Tier 2 |
+| Package | Purpose |
+|---|---|
+| `@node-dlc/messaging` | DLC message deserialization |
+| `bitcoinjs-lib` | P2WSH address reconstruction |
+| `bitcoin-networks` | Chain hash detection (mainnet/regtest) |
+| `bip-schnorr` | Oracle announcement Schnorr sig verification |
+| `@bennyblader/ddk-ts` | ECDSA adaptor sig verification via DDK |
 
-`@bennyblader/ddk-ts` is a public MIT-licensed npm package containing pre-compiled native binaries (arm64/x64). It provides the cryptographic transaction reconstruction and adaptor-signature verification used by Tier 2.
+`@bennyblader/ddk-ts` is a public MIT-licensed npm package containing pre-compiled native binaries (arm64/x64). It provides the cryptographic transaction reconstruction and adaptor signature verification.
 
 ---
 
-## How Tier 2 verification works
+## How adaptor signature verification works
 
 The key cryptographic claim being verified: *"The accepter's adaptor signatures are valid ECDSA adaptor signatures, locked to the oracle's announced nonce, that will decrypt to valid CET signatures once the oracle attests to an outcome."*
 
@@ -142,14 +142,14 @@ examples/
 public/
 └── index.html         # Web UI
 
-Verification tiers:
-├── Tier 1: @node-dlc/messaging deserialization
+Verification layers:
+├── Structural: @node-dlc/messaging deserialization
 │   ├── DlcOffer.deserialize(hex)
 │   ├── DlcAccept.deserialize(hex)
 │   ├── Oracle announcement Schnorr sig check (bip-schnorr)
 │   └── P2WSH address reconstruction (bitcoinjs-lib)
 │
-└── Tier 2: DDK native binary (@bennyblader/ddk-ts)
+└── Cryptographic: DDK native binary (@bennyblader/ddk-ts)
     ├── createDlcTransactions() → fund TX + CETs
     └── verifyCetAdaptorSigsFromOracleInfo() → true/false
 ```

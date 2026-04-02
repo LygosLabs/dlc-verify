@@ -10,7 +10,7 @@ export interface FundingInput {
 }
 
 export interface VerificationResult {
-  // Tier 1 - Structural verification
+  // Structural verification (message parsing)
   contractType: string | null;
   totalCollateral: string | null;
   offerCollateral: string | null;
@@ -35,9 +35,9 @@ export interface VerificationResult {
   acceptInputs: FundingInput[];
   contractId: string | null;
 
-  // Tier 2 - Cryptographic verification
-  tier2Available: boolean;
-  tier2Note: string | null;
+  // Adaptor signature verification (cryptographic)
+  adaptorSigVerificationAvailable: boolean;
+  adaptorSigVerificationNote: string | null;
   fundTxId: string | null;
   cetCount: number | null;
   adaptorValid: boolean | null;
@@ -45,7 +45,7 @@ export interface VerificationResult {
   adaptorTotalCount: number;
   adaptorError: string | null;
 
-  // Tier 3 - Sign message verification (when sign hex provided)
+  // Sign message verification (when sign hex provided)
   signAvailable: boolean;
   signContractId: string | null;
   signContractIdMatches: boolean | null;
@@ -58,7 +58,7 @@ export interface VerificationResult {
   error: string | null;
 }
 
-export interface Tier2Result {
+export interface AdaptorVerificationResult {
   available: boolean;
   note: string;
   fundTxId: string | null;
