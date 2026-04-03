@@ -14,6 +14,7 @@ const {
   DlcOffer,
   DlcAccept,
   DlcSign,
+  OracleAttestation,
   EnumeratedDescriptor,
   NumericalDescriptor,
   SingleOracleInfo,
@@ -22,6 +23,7 @@ const {
 
 import type {
   AdaptorVerificationResult,
+  CetExecutionResult,
   CliArgs,
   ContractInfo,
   DdkModule,
@@ -47,6 +49,7 @@ Options:
   --offer <hex>           DLC offer message hex
   --accept <hex>          DLC accept message hex
   --sign <hex>            DLC sign message hex (optional)
+  --attestation <hex>     Oracle attestation hex (requires --sign; produces broadcastable CET)
   --oracle-pubkey <hex>   Expected oracle x-only pubkey (optional)
   --help, -h              Show this help
 
@@ -54,6 +57,7 @@ Examples:
   node dist/verify.js                              # Use sample data
   node dist/verify.js --offer <hex> --accept <hex> # Verify custom DLC
   node dist/verify.js --offer <hex> --accept <hex> --sign <hex>
+  node dist/verify.js --offer <hex> --accept <hex> --sign <hex> --attestation <hex>
   node dist/verify.js --offer <hex> --accept <hex> --oracle-pubkey <hex>
 
 The tool performs two levels of verification:
@@ -90,6 +94,7 @@ function parseCliArgs(args: string[]): CliArgs {
     acceptHex: sample.accept,
     expectedOraclePubkey: null,
     signHex: null,
+    attestationHex: null,
     showHelp: false,
   };
 
@@ -109,6 +114,10 @@ function parseCliArgs(args: string[]): CliArgs {
     }
     if (arg === '--sign' && args[i + 1]) {
       parsed.signHex = args[++i];
+      continue;
+    }
+    if (arg === '--attestation' && args[i + 1]) {
+      parsed.attestationHex = args[++i];
       continue;
     }
     if (arg === '--oracle-pubkey' && args[i + 1]) {
@@ -327,6 +336,179 @@ export async function verifyDlc(
   return result;
 }
 
+/**
+ * Execute a CET using oracle attestation — produces a broadcastable transaction.
+ * Requires offer, accept, sign, and attestation hex.
+ */
+export async function executeCet(
+  offerHex: string,
+  acceptHex: string,
+  signHex: string,
+  attestationHex: string,
+): Promise<CetExecutionResult> {
+  const ddk = await initDdk();
+  const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
+  const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
+  const sign = DlcSign.deserialize(Buffer.from(signHex, 'hex'));
+  const attestation = OracleAttestation.deserialize(Buffer.from(attestationHex, 'hex'));
+
+  const attestedOutcome = attestation.outcomes[0];
+  if (!attestedOutcome) {
+    throw new Error('Oracle attestation contains no outcomes');
+  }
+
+  // Find outcome index matching attestation
+  const contract = extractContractInfo(offer.contractInfo);
+  const descriptor = contract.descriptor;
+  if (!(descriptor instanceof EnumeratedDescriptor)) {
+    throw new Error('CET execution currently supports EnumeratedDescriptor contracts only');
+  }
+
+  const outcomeIndex = descriptor.outcomes.findIndex((o: { outcome: string }) => {
+    if (o.outcome === attestedOutcome) return true;
+    const hash = crypto.createHash('sha256').update(Buffer.from(attestedOutcome, 'utf8')).digest('hex');
+    return o.outcome === hash;
+  });
+  if (outcomeIndex === -1) {
+    const available = descriptor.outcomes.map((o: { outcome: string }) => o.outcome).join(', ');
+    throw new Error(`Attestation outcome "${attestedOutcome}" not found in contract outcomes: [${available}]`);
+  }
+
+  // Rebuild DLC transactions via DDK
+  const offerTyped = offer as {
+    fundingPubkey: Buffer;
+    changeSpk: Buffer;
+    changeSerialId: bigint;
+    payoutSpk: Buffer;
+    payoutSerialId: bigint;
+    fundingInputs: Array<{
+      prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+      prevTxVout: number;
+      maxWitnessLen: number;
+      inputSerialId: bigint;
+    }>;
+    offerCollateral: bigint;
+    refundLocktime: number;
+    feeRatePerVb: bigint;
+    cetLocktime: number;
+    fundOutputSerialId: bigint;
+    contractInfo: { totalCollateral: bigint };
+  };
+
+  const acceptTyped = accept as {
+    fundingPubkey: Buffer;
+    changeSpk: Buffer;
+    changeSerialId: bigint;
+    payoutSpk: Buffer;
+    payoutSerialId: bigint;
+    fundingInputs: Array<{
+      prevTx: { txId: { toString: () => string }; outputs: Array<{ value?: { sats?: bigint } }> };
+      prevTxVout: number;
+      maxWitnessLen: number;
+      inputSerialId: bigint;
+    }>;
+    acceptCollateral: bigint;
+  };
+
+  const outcomes = descriptor.outcomes.map((o: { outcome: string; localPayout: bigint }) => ({
+    offer: BigInt(o.localPayout),
+    accept: BigInt(offerTyped.contractInfo.totalCollateral) - BigInt(o.localPayout),
+  }));
+
+  const localParams: PartyParams = {
+    fundPubkey: offerTyped.fundingPubkey,
+    changeScriptPubkey: offerTyped.changeSpk,
+    changeSerialId: BigInt(offerTyped.changeSerialId),
+    payoutScriptPubkey: offerTyped.payoutSpk,
+    payoutSerialId: BigInt(offerTyped.payoutSerialId),
+    inputs: buildPartyParamsInputs(offerTyped.fundingInputs),
+    inputAmount: sumFundingInputAmount(offerTyped.fundingInputs),
+    collateral: BigInt(offerTyped.offerCollateral),
+    dlcInputs: [],
+  };
+
+  const remoteParams: PartyParams = {
+    fundPubkey: acceptTyped.fundingPubkey,
+    changeScriptPubkey: acceptTyped.changeSpk,
+    changeSerialId: BigInt(acceptTyped.changeSerialId),
+    payoutScriptPubkey: acceptTyped.payoutSpk,
+    payoutSerialId: BigInt(acceptTyped.payoutSerialId),
+    inputs: buildPartyParamsInputs(acceptTyped.fundingInputs),
+    inputAmount: sumFundingInputAmount(acceptTyped.fundingInputs),
+    collateral: BigInt(acceptTyped.acceptCollateral),
+    dlcInputs: [],
+  };
+
+  const dlcTxs = ddk.createDlcTransactions(
+    outcomes,
+    localParams,
+    remoteParams,
+    offerTyped.refundLocktime,
+    BigInt(offerTyped.feeRatePerVb),
+    0,
+    offerTyped.cetLocktime,
+    BigInt(offerTyped.fundOutputSerialId),
+  );
+
+  if (outcomeIndex >= dlcTxs.cets.length) {
+    throw new Error(`Outcome index ${outcomeIndex} out of bounds. CET count: ${dlcTxs.cets.length}`);
+  }
+
+  // Extract adaptor signatures for the attested outcome
+  const offerAdaptorSig = sign.cetAdaptorSignatures?.sigs?.[outcomeIndex];
+  const acceptAdaptorSig =
+    accept.cetAdaptorSignatures?.sigs?.[outcomeIndex] ??
+    (Array.isArray(accept.cetAdaptorSignatures) ? accept.cetAdaptorSignatures[outcomeIndex] : null);
+
+  if (!offerAdaptorSig || !acceptAdaptorSig) {
+    throw new Error(
+      `Missing adaptor signatures for outcome ${outcomeIndex}. ` +
+        `offerSigs=${sign.cetAdaptorSignatures?.sigs?.length ?? 0} ` +
+        `acceptSigs=${accept.cetAdaptorSignatures?.sigs?.length ?? accept.cetAdaptorSignatures?.length ?? 0}`,
+    );
+  }
+
+  // Build full 162-byte adaptor signatures: encryptedSig (65) + dleqProof (97)
+  const offerFullSig = Buffer.concat([offerAdaptorSig.encryptedSig, offerAdaptorSig.dleqProof || Buffer.alloc(0)]);
+  const acceptFullSig = Buffer.concat([acceptAdaptorSig.encryptedSig, acceptAdaptorSig.dleqProof || Buffer.alloc(0)]);
+
+  // Decrypt adaptor signatures using oracle attestation
+  const offerRealSig = ddk.extractEcdsaSignatureFromOracleSignatures(attestation.signatures, offerFullSig);
+  const acceptRealSig = ddk.extractEcdsaSignatureFromOracleSignatures(attestation.signatures, acceptFullSig);
+
+  // Append SIGHASH_ALL
+  const SIGHASH_ALL = Buffer.from([0x01]);
+  const offerSigFinal = Buffer.concat([offerRealSig, SIGHASH_ALL]);
+  const acceptSigFinal = Buffer.concat([acceptRealSig, SIGHASH_ALL]);
+
+  // Build the signed CET
+  const cet = dlcTxs.cets[outcomeIndex];
+  const cetTx = bitcoin.Transaction.fromBuffer(cet.rawBytes);
+
+  // Sort pubkeys lexicographically for 2-of-2 multisig witness
+  const offerPubkey = offer.fundingPubkey;
+  const acceptPubkey = accept.fundingPubkey;
+  const offerFirst = Buffer.compare(offerPubkey, acceptPubkey) === -1;
+  const sortedPubkeys = offerFirst ? [offerPubkey, acceptPubkey] : [acceptPubkey, offerPubkey];
+  const sortedSigs = offerFirst ? [offerSigFinal, acceptSigFinal] : [acceptSigFinal, offerSigFinal];
+
+  // Create 2-of-2 multisig witness script
+  const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys: sortedPubkeys });
+
+  // P2WSH witness: <empty> <sig1> <sig2> <witnessScript>
+  if (!p2ms.output) {
+    throw new Error('Failed to create multisig witness script');
+  }
+  cetTx.ins[0].witness = [Buffer.alloc(0), sortedSigs[0], sortedSigs[1], p2ms.output];
+
+  return {
+    cetHex: cetTx.toHex(),
+    cetTxid: cetTx.getId(),
+    outcome: attestedOutcome,
+    outcomeIndex,
+  };
+}
+
 function satsToBtc(sats: bigint | number | string): string {
   return (Number(sats) / 1e8).toFixed(8);
 }
@@ -473,19 +655,6 @@ function getFundingScriptAndScriptPubKey(
     fundingScript: p2ms.output ? Buffer.from(p2ms.output) : undefined,
     fundingScriptPubKey: p2wsh.output ? Buffer.from(p2wsh.output) : undefined,
   };
-}
-
-function findFundOutput(
-  outputs: Array<{ scriptPubkey?: Buffer; script?: Buffer; value: bigint }>,
-  fundingScriptPubKey: Buffer | undefined,
-): { value: bigint } | null {
-  if (!fundingScriptPubKey) return null;
-  const targetScriptHex = Buffer.from(fundingScriptPubKey).toString('hex');
-  for (const output of outputs) {
-    const outputScriptHex = Buffer.from(output.scriptPubkey ?? output.script ?? []).toString('hex');
-    if (outputScriptHex === targetScriptHex) return output;
-  }
-  return null;
 }
 
 function computeContractIdFromFundingOutpoint(
@@ -903,7 +1072,9 @@ async function verifyAdaptorSignatures(
 }
 
 async function main(): Promise<void> {
-  const { offerHex, acceptHex, expectedOraclePubkey, signHex, showHelp } = parseCliArgs(process.argv.slice(2));
+  const { offerHex, acceptHex, expectedOraclePubkey, signHex, attestationHex, showHelp } = parseCliArgs(
+    process.argv.slice(2),
+  );
 
   if (showHelp) {
     console.log(HELP_TEXT);
@@ -1088,14 +1259,40 @@ async function main(): Promise<void> {
     lines.push('');
     lines.push('Sign message verification:');
     lines.push(`  Sign contract ID: ${signResult.signContractId || 'n/a'}`);
-    lines.push(`  Contract ID match: ${signResult.signContractIdMatches === true ? 'MATCH' : signResult.signContractIdMatches === false ? 'MISMATCH' : 'n/a'}`);
+    lines.push(
+      `  Contract ID match: ${signResult.signContractIdMatches === true ? 'MATCH' : signResult.signContractIdMatches === false ? 'MISMATCH' : 'n/a'}`,
+    );
     if (signResult.signAdaptorValid === true) {
-      lines.push(`  Sign adaptor signatures: CRYPTOGRAPHICALLY VALID (${signResult.signAdaptorValidCount}/${signResult.signAdaptorTotalCount})`);
+      lines.push(
+        `  Sign adaptor signatures: CRYPTOGRAPHICALLY VALID (${signResult.signAdaptorValidCount}/${signResult.signAdaptorTotalCount})`,
+      );
     } else if (signResult.signAdaptorValid === false) {
-      lines.push(`  Sign adaptor signatures: CRYPTOGRAPHICALLY INVALID${signResult.signAdaptorError ? ` - ${signResult.signAdaptorError}` : ''}`);
+      lines.push(
+        `  Sign adaptor signatures: CRYPTOGRAPHICALLY INVALID${signResult.signAdaptorError ? ` - ${signResult.signAdaptorError}` : ''}`,
+      );
     } else {
       lines.push('  Sign adaptor signatures: not verified');
     }
+  }
+
+  // CET execution (when attestation provided)
+  if (attestationHex && signHex) {
+    try {
+      const cetResult = await executeCet(offerHex, acceptHex, signHex, attestationHex);
+      lines.push('');
+      lines.push('CET Execution (oracle attestation provided):');
+      lines.push(`  Attested outcome: ${cetResult.outcome}`);
+      lines.push(`  Outcome index: ${cetResult.outcomeIndex}`);
+      lines.push(`  CET TX ID: ${cetResult.cetTxid}`);
+      lines.push(`  Signed CET hex (broadcastable):`);
+      lines.push(`  ${cetResult.cetHex}`);
+    } catch (cetErr) {
+      lines.push('');
+      lines.push(`CET Execution FAILED: ${(cetErr as Error).message}`);
+    }
+  } else if (attestationHex && !signHex) {
+    lines.push('');
+    lines.push('CET Execution: --attestation requires --sign to execute a CET');
   }
 
   console.log(lines.join('\n'));

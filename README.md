@@ -61,6 +61,14 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Verifies the DlcSign contract ID matches the computed contract ID from the offer/accept
 - Verifies the offerer's CET adaptor signatures from the sign message
 
+### CET execution (optional — escape hatch)
+
+When provided with an oracle attestation in addition to offer/accept/sign, the tool can produce a **fully signed, broadcastable CET transaction**. This is the "escape hatch" — if the platform goes down, a party with their DLC messages and the oracle attestation can settle the contract independently on-chain.
+
+- Decrypts both parties' adaptor signatures using the oracle's attestation scalar
+- Builds the 2-of-2 multisig witness and produces a broadcastable transaction hex
+- Available via CLI (`--attestation <hex>`) and API (`POST /api/execute`)
+
 ---
 
 ## Quick Start
@@ -91,6 +99,7 @@ pnpm run verify              # Use sample data
 pnpm run verify -- --help    # Show help
 pnpm run verify -- --offer <hex> --accept <hex>
 pnpm run verify -- --offer <hex> --accept <hex> --sign <hex>
+pnpm run verify -- --offer <hex> --accept <hex> --sign <hex> --attestation <hex>
 pnpm run verify -- --offer <hex> --accept <hex> --oracle-pubkey <xonly_pubkey>
 ```
 
