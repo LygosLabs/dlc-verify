@@ -74,6 +74,14 @@ export interface AdaptorVerificationResult {
 export interface VerifyOptions {
   expectedOraclePubkey?: string;
   signHex?: string;
+  attestationHex?: string;
+}
+
+export interface CetExecutionResult {
+  cetHex: string;
+  cetTxid: string;
+  outcome: string;
+  outcomeIndex: number;
 }
 
 export interface CliArgs {
@@ -81,6 +89,7 @@ export interface CliArgs {
   acceptHex: string;
   expectedOraclePubkey: string | null;
   signHex: string | null;
+  attestationHex: string | null;
   showHelp: boolean;
 }
 
@@ -135,6 +144,7 @@ export interface DdkModule {
     fundOutputValue: bigint,
     messages: Buffer[][][],
   ) => boolean;
+  extractEcdsaSignatureFromOracleSignatures: (oracleSignatures: Buffer[], adaptorSignature: Buffer) => Buffer;
 }
 
 export interface PartyParams {
