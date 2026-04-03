@@ -31,6 +31,7 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Inspect payout outcomes and collateral splits before signing
 - Verify oracle identity, event IDs, locktimes, and funding data
 - Confirm CET adaptor signatures are cryptographically valid
+- Verify DlcSign message: contract ID match and offerer adaptor signatures
 - Run it locally or self-host it without trusting a third-party backend
 
 ---
@@ -54,6 +55,11 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Deterministically reconstructs the fund transaction and all CETs from the offer/accept parameters
 - Verifies all CET ECDSA adaptor signatures against the oracle's announced nonce and pubkey
 - Reports `CRYPTOGRAPHICALLY VALID (N/N)` or `INVALID` with detail
+
+### Sign message verification (optional)
+
+- Verifies the DlcSign contract ID matches the computed contract ID from the offer/accept
+- Verifies the offerer's CET adaptor signatures from the sign message
 
 ---
 
@@ -84,6 +90,7 @@ pnpm start
 pnpm run verify              # Use sample data
 pnpm run verify -- --help    # Show help
 pnpm run verify -- --offer <hex> --accept <hex>
+pnpm run verify -- --offer <hex> --accept <hex> --sign <hex>
 pnpm run verify -- --offer <hex> --accept <hex> --oracle-pubkey <xonly_pubkey>
 ```
 
@@ -186,7 +193,7 @@ No backend. No wallet. No private keys. Stateless.
 ## Roadmap
 
 - [ ] Accept hex via stdin in addition to CLI args
-- [ ] DlcSign verification (fund TX signatures)
+- [x] DlcSign verification (contract ID match + offerer adaptor signatures)
 - [ ] Refund signature verification
 - [ ] Broader DLC shape support beyond the current enumerated focus
 - [ ] Oracle pubkey registry / known-oracle presets for hosted deployments

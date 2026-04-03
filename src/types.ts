@@ -80,6 +80,7 @@ export interface CliArgs {
   offerHex: string;
   acceptHex: string;
   expectedOraclePubkey: string | null;
+  signHex: string | null;
   showHelp: boolean;
 }
 

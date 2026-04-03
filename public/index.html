@@ -314,6 +314,26 @@
                                     <p id="adaptorSigDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
                                 </div>
                             </li>
+
+                            <li id="contractIdMatchProofStep" class="relative z-10 flex gap-3 items-start hidden">
+                                <div id="contractIdMatchIconWrap" class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white">
+                                    <i id="contractIdMatchIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium text-gray-900">Sign Contract ID Match</h4>
+                                    <p id="contractIdMatchDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
+                                </div>
+                            </li>
+
+                            <li id="signAdaptorProofStep" class="relative z-10 flex gap-3 items-start hidden">
+                                <div id="signAdaptorIconWrap" class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0 mt-0.5 border-2 border-white ring-2 ring-white">
+                                    <i id="signAdaptorIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-medium text-gray-900">Sign Adaptor Signatures</h4>
+                                    <p id="signAdaptorDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
+                                </div>
+                            </li>
                         </ul>
                     </div>
                 </div>
@@ -773,6 +793,33 @@
                 setProofStep('adaptorSig', false, result.adaptorError || 'Verification failed');
             } else {
                 setProofStep('adaptorSig', null, result.adaptorSigVerificationNote || 'Not available');
+            }
+
+            // Sign message verification steps
+            const contractIdMatchStep = document.getElementById('contractIdMatchProofStep');
+            const signAdaptorStep = document.getElementById('signAdaptorProofStep');
+            if (result.signAvailable) {
+                contractIdMatchStep.classList.remove('hidden');
+                signAdaptorStep.classList.remove('hidden');
+
+                if (result.signContractIdMatches === true) {
+                    setProofStep('contractIdMatch', true, 'Sign contract ID matches computed contract ID.');
+                } else if (result.signContractIdMatches === false) {
+                    setProofStep('contractIdMatch', false, `Mismatch: sign has ${result.signContractId}, expected ${result.contractId}`);
+                } else {
+                    setProofStep('contractIdMatch', null, 'Could not verify.');
+                }
+
+                if (result.signAdaptorValid === true) {
+                    setProofStep('signAdaptor', true, `Verified all ${result.signAdaptorTotalCount} offerer adaptor signatures.`);
+                } else if (result.signAdaptorValid === false) {
+                    setProofStep('signAdaptor', false, result.signAdaptorError || 'Verification failed');
+                } else {
+                    setProofStep('signAdaptor', null, 'Not verified');
+                }
+            } else {
+                contractIdMatchStep.classList.add('hidden');
+                signAdaptorStep.classList.add('hidden');
             }
 
             // Identifiers & Scripts

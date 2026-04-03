@@ -46,12 +46,14 @@ Usage:
 Options:
   --offer <hex>           DLC offer message hex
   --accept <hex>          DLC accept message hex
+  --sign <hex>            DLC sign message hex (optional)
   --oracle-pubkey <hex>   Expected oracle x-only pubkey (optional)
   --help, -h              Show this help
 
 Examples:
   node dist/verify.js                              # Use sample data
   node dist/verify.js --offer <hex> --accept <hex> # Verify custom DLC
+  node dist/verify.js --offer <hex> --accept <hex> --sign <hex>
   node dist/verify.js --offer <hex> --accept <hex> --oracle-pubkey <hex>
 
 The tool performs two levels of verification:
@@ -87,6 +89,7 @@ function parseCliArgs(args: string[]): CliArgs {
     offerHex: sample.offer,
     acceptHex: sample.accept,
     expectedOraclePubkey: null,
+    signHex: null,
     showHelp: false,
   };
 
@@ -102,6 +105,10 @@ function parseCliArgs(args: string[]): CliArgs {
     }
     if (arg === '--accept' && args[i + 1]) {
       parsed.acceptHex = args[++i];
+      continue;
+    }
+    if (arg === '--sign' && args[i + 1]) {
+      parsed.signHex = args[++i];
       continue;
     }
     if (arg === '--oracle-pubkey' && args[i + 1]) {
@@ -896,7 +903,7 @@ async function verifyAdaptorSignatures(
 }
 
 async function main(): Promise<void> {
-  const { offerHex, acceptHex, expectedOraclePubkey, showHelp } = parseCliArgs(process.argv.slice(2));
+  const { offerHex, acceptHex, expectedOraclePubkey, signHex, showHelp } = parseCliArgs(process.argv.slice(2));
 
   if (showHelp) {
     console.log(HELP_TEXT);
@@ -1070,6 +1077,25 @@ async function main(): Promise<void> {
 
   if (!adaptorResult.available || !adaptorResult.fundTxId) {
     lines.push('  Contract ID from funding outpoint formula requires reconstructed fund tx + output index.');
+  }
+
+  // Sign message verification (CLI)
+  if (signHex) {
+    const signResult = await verifyDlc(offerHex, acceptHex, {
+      expectedOraclePubkey: normalizedExpectedOraclePubkey || undefined,
+      signHex,
+    });
+    lines.push('');
+    lines.push('Sign message verification:');
+    lines.push(`  Sign contract ID: ${signResult.signContractId || 'n/a'}`);
+    lines.push(`  Contract ID match: ${signResult.signContractIdMatches === true ? 'MATCH' : signResult.signContractIdMatches === false ? 'MISMATCH' : 'n/a'}`);
+    if (signResult.signAdaptorValid === true) {
+      lines.push(`  Sign adaptor signatures: CRYPTOGRAPHICALLY VALID (${signResult.signAdaptorValidCount}/${signResult.signAdaptorTotalCount})`);
+    } else if (signResult.signAdaptorValid === false) {
+      lines.push(`  Sign adaptor signatures: CRYPTOGRAPHICALLY INVALID${signResult.signAdaptorError ? ` - ${signResult.signAdaptorError}` : ''}`);
+    } else {
+      lines.push('  Sign adaptor signatures: not verified');
+    }
   }
 
   console.log(lines.join('\n'));
