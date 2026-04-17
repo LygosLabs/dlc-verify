@@ -75,6 +75,7 @@ export interface VerifyOptions {
   expectedOraclePubkey?: string;
   signHex?: string;
   attestationHex?: string;
+  logPrefix?: string;
 }
 
 export interface CetExecutionResult {

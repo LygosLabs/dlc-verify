@@ -186,14 +186,25 @@ export async function verifyDlc(
     error: null,
   };
 
+  const log = (msg: string): void => {
+    if (options.logPrefix) console.log(`[${options.logPrefix}] ${msg}`);
+  };
+
   try {
     const expectedOraclePubkey = normalizeOraclePubkeyHex(options.expectedOraclePubkey);
+    log(`parsing offer/accept (offerHex=${offerHex.length}ch acceptHex=${acceptHex.length}ch)`);
     const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
     const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
+    log('parsed offer & accept successfully');
 
     const contract = extractContractInfo(offer.contractInfo);
     const descriptor = contract.descriptor;
     const oracleAnnouncement = extractOracleAnnouncement(contract.oracleInfo);
+    log(
+      `contract kind=${contract.kind} descriptor=${descriptor?.constructor?.name ?? 'unknown'} ` +
+        `totalCollateral=${contract.totalCollateral} ` +
+        `oracleAnnouncement=${oracleAnnouncement ? 'present' : 'missing'}`,
+    );
 
     const totalCollateral = contract.totalCollateral;
     const offerCollateral = offer.offerCollateral;
@@ -260,10 +271,14 @@ export async function verifyDlc(
         verify(oracleAnnouncement.oraclePublicKey, msg, oracleAnnouncement.announcementSig);
         result.oracleSigValid = true;
         result.oracleSigError = null;
+        log('oracle announcement signature valid');
       } catch (e) {
         result.oracleSigValid = false;
         result.oracleSigError = (e as Error).message;
+        log(`oracle announcement signature INVALID: ${(e as Error).message}`);
       }
+    } else {
+      log('skipping oracle sig verification: no announcement present');
     }
 
     // Compute contract ID
@@ -285,7 +300,20 @@ export async function verifyDlc(
     }
 
     // Adaptor signature verification
-    const adaptorResult = await verifyAdaptorSignatures(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
+    log('invoking adaptor signature verification');
+    const adaptorResult = await verifyAdaptorSignatures(
+      offer,
+      accept,
+      descriptor,
+      fundingAddress,
+      oracleAnnouncement,
+      options.logPrefix,
+    );
+    log(
+      `adaptor result available=${adaptorResult.available} valid=${adaptorResult.adaptorValid} ` +
+        `count=${adaptorResult.adaptorValidCount}/${adaptorResult.adaptorTotalCount} ` +
+        `error=${adaptorResult.adaptorError ?? 'null'} note=${adaptorResult.note}`,
+    );
     result.adaptorSigVerificationAvailable = adaptorResult.available;
     result.adaptorSigVerificationNote = adaptorResult.note || null;
     result.fundTxId = adaptorResult.fundTxId;
@@ -302,14 +330,25 @@ export async function verifyDlc(
 
     // Sign message verification
     if (options.signHex) {
+      log(`sign hex provided (${options.signHex.length}ch), parsing`);
       try {
         const sign = DlcSign.deserialize(Buffer.from(options.signHex, 'hex'));
         result.signAvailable = true;
         result.signContractId = sign.contractId.toString('hex');
+        log(
+          `parsed sign message: contractId=${result.signContractId} ` +
+            `cetAdaptorSigs=${sign.cetAdaptorSignatures?.sigs?.length ?? 'n/a'}`,
+        );
 
         // Check if contract ID matches
         if (result.contractId) {
           result.signContractIdMatches = result.signContractId === result.contractId;
+          log(
+            `sign contractId match=${result.signContractIdMatches} ` +
+              `(sign=${result.signContractId} vs computed=${result.contractId})`,
+          );
+        } else {
+          log('no computed contractId available to compare against sign.contractId');
         }
 
         // Verify offerer's CET adaptor signatures
@@ -323,14 +362,22 @@ export async function verifyDlc(
           } catch (sigErr) {
             result.signAdaptorError = (sigErr as Error).message;
             result.signAdaptorValid = false;
+            log(`sign adaptor sig processing threw: ${(sigErr as Error).message}`);
           }
+        } else {
+          log(
+            `sign adaptor verification skipped: adaptorAvailable=${adaptorResult.available} ` +
+              `hasSigs=${!!sign.cetAdaptorSignatures?.sigs}`,
+          );
         }
       } catch (signErr) {
         result.signAdaptorError = `Failed to parse sign message: ${(signErr as Error).message}`;
+        log(`sign parse FAILED: ${(signErr as Error).message}`);
       }
     }
   } catch (err) {
     result.error = (err as Error).message;
+    log(`verifyDlc threw: ${(err as Error).stack ?? (err as Error).message}`);
   }
 
   return result;
@@ -888,7 +935,12 @@ async function verifyAdaptorSignatures(
   descriptor: any,
   _fundingAddress: FundingAddressInfo,
   oracleAnnouncement: OracleAnnouncementResult | null,
+  logPrefix?: string,
 ): Promise<AdaptorVerificationResult> {
+  const log = (msg: string): void => {
+    if (logPrefix) console.log(`[${logPrefix}:adaptor] ${msg}`);
+  };
+
   const result: AdaptorVerificationResult = {
     available: false,
     note: '',
@@ -904,6 +956,7 @@ async function verifyAdaptorSignatures(
 
   try {
     const ddk = await initDdk();
+    log('DDK initialized');
     if (!(descriptor instanceof EnumeratedDescriptor)) {
       throw new Error('Adaptor signature verification currently supports EnumeratedDescriptor contracts only');
     }
@@ -911,6 +964,10 @@ async function verifyAdaptorSignatures(
     if (!oracleAnnouncement?.oraclePublicKey || !oracleAnnouncement?.oracleEvent?.oracleNonces?.length) {
       throw new Error('Missing oracle announcement pubkey/nonce for adaptor verification');
     }
+    log(
+      `precondition ok: outcomes=${descriptor.outcomes.length} ` +
+        `oracleNonces=${oracleAnnouncement.oracleEvent.oracleNonces.length}`,
+    );
 
     const offerTyped = offer as {
       fundingPubkey: Buffer;
@@ -980,6 +1037,12 @@ async function verifyAdaptorSignatures(
       dlcInputs: [],
     };
 
+    log(
+      `calling ddk.createDlcTransactions: outcomes=${outcomes.length} ` +
+        `offerCollateral=${localParams.collateral} offerInputs=${localParams.inputs.length} offerInputAmount=${localParams.inputAmount} ` +
+        `acceptCollateral=${remoteParams.collateral} acceptInputs=${remoteParams.inputs.length} acceptInputAmount=${remoteParams.inputAmount} ` +
+        `feeRate=${offerTyped.feeRatePerVb} refundLocktime=${offerTyped.refundLocktime} cetLocktime=${offerTyped.cetLocktime}`,
+    );
     const dlcTxs = ddk.createDlcTransactions(
       outcomes,
       localParams,
@@ -990,6 +1053,7 @@ async function verifyAdaptorSignatures(
       offerTyped.cetLocktime,
       BigInt(offerTyped.fundOutputSerialId),
     );
+    log(`DDK built fund tx + ${dlcTxs.cets.length} CETs`);
 
     // Compute fund txid from DDK-built fund transaction
     const fundTxId = crypto
@@ -998,6 +1062,7 @@ async function verifyAdaptorSignatures(
       .digest()
       .reverse()
       .toString('hex');
+    log(`fundTxId=${fundTxId}`);
 
     // Build tagged attestation messages: Array<Array<Array<Buffer>>> (per-CET → per-oracle → msgs)
     const messagesForDdk = descriptor.outcomes.map((o: { outcome: string }) => [[getTaggedOutcomeHash(o.outcome)]]);
@@ -1021,6 +1086,11 @@ async function verifyAdaptorSignatures(
     // Adaptor pairs: for enum contracts, concat encryptedSig + dleqProof into signature field
     const adaptorSigsRaw = acceptTyped.cetAdaptorSignatures;
     const adaptorSigs = Array.isArray(adaptorSigsRaw) ? adaptorSigsRaw : adaptorSigsRaw?.sigs || [];
+    log(
+      `accept adaptor sigs: count=${adaptorSigs.length} ` +
+        `shape=${Array.isArray(adaptorSigsRaw) ? 'array' : 'object-with-sigs'} ` +
+        `firstSigBytes=${adaptorSigs[0]?.encryptedSig?.length ?? 0}+${adaptorSigs[0]?.dleqProof?.length ?? 0}`,
+    );
     const adaptorPairs = adaptorSigs.map((sig: { encryptedSig: Buffer; dleqProof: Buffer }) => ({
       signature: Buffer.concat([sig.encryptedSig, sig.dleqProof]),
       proof: Buffer.from(''),
@@ -1034,6 +1104,7 @@ async function verifyAdaptorSignatures(
     if (!fundOutput || fundOutputIndex < 0) {
       throw new Error('Could not locate fund output in reconstructed funding transaction');
     }
+    log(`fundOutputIndex=${fundOutputIndex} fundOutputValue=${fundOutput.value}`);
 
     // Compute contract ID from DDK-built funding tx (authoritative source)
     if (offer.temporaryContractId && fundTxId) {
@@ -1044,15 +1115,28 @@ async function verifyAdaptorSignatures(
       );
     }
 
-    const isValid = ddk.verifyCetAdaptorSigsFromOracleInfo(
-      adaptorPairs,
-      dlcTxs.cets,
-      oracleInfo,
-      acceptTyped.fundingPubkey,
-      fundingScript,
-      fundOutput.value,
-      messagesForDdk,
+    log(
+      `calling ddk.verifyCetAdaptorSigsFromOracleInfo: adaptorPairs=${adaptorPairs.length} ` +
+        `cets=${dlcTxs.cets.length} messages=${messagesForDdk.length} ` +
+        `oraclePubkey=${oracleInfo[0].publicKey.toString('hex').slice(0, 16)}... ` +
+        `nonces=${oracleInfo[0].nonces.length} fundingScript=${fundingScript.length}b`,
     );
+    let isValid = false;
+    try {
+      isValid = ddk.verifyCetAdaptorSigsFromOracleInfo(
+        adaptorPairs,
+        dlcTxs.cets,
+        oracleInfo,
+        acceptTyped.fundingPubkey,
+        fundingScript,
+        fundOutput.value,
+        messagesForDdk,
+      );
+      log(`ddk.verifyCetAdaptorSigsFromOracleInfo returned ${isValid}`);
+    } catch (ddkErr) {
+      log(`ddk.verifyCetAdaptorSigsFromOracleInfo threw: ${(ddkErr as Error).stack ?? (ddkErr as Error).message}`);
+      throw ddkErr;
+    }
 
     result.available = true;
     result.fundTxId = fundTxId;
@@ -1067,6 +1151,7 @@ async function verifyAdaptorSignatures(
     return result;
   } catch (err) {
     result.note = `Adaptor verification unavailable: ${(err as Error).message}`;
+    log(`aborted before DDK verification: ${(err as Error).stack ?? (err as Error).message}`);
     return result;
   }
 }
