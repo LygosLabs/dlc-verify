@@ -898,22 +898,20 @@ function tryComputeContractIdFromSingleFunded(
 }
 
 async function initDdk(): Promise<DdkModule> {
-  // DDK (ddk-ts native binary) provides adaptor signature verification.
-  // Probe for ddk-ts native binary (arm64 or x64)
-  const ddkPaths = [
-    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-arm64.node'),
-    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.darwin-x64.node'),
-    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist/ddk-ts.linux-x64-gnu.node'),
-  ];
+  const { platform, arch } = process;
+  let binName: string;
+  if (platform === 'darwin' && arch === 'arm64') binName = 'ddk-ts.darwin-arm64.node';
+  else if (platform === 'darwin' && arch === 'x64') binName = 'ddk-ts.darwin-x64.node';
+  else if (platform === 'linux' && arch === 'x64') binName = 'ddk-ts.linux-x64-gnu.node';
+  else throw new Error(`Unsupported platform for ddk-ts: ${platform}-${arch}`);
 
-  for (const ddkPath of ddkPaths) {
-    if (!fs.existsSync(ddkPath)) continue;
-    const m = { exports: {} as DdkModule };
-    process.dlopen(m, ddkPath);
-    return m.exports;
+  const binPath = path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist', binName);
+  if (!fs.existsSync(binPath)) {
+    throw new Error(`ddk-ts native binary not found: ${binPath}`);
   }
-
-  throw new Error('Could not find ddk-ts native binary for adaptor signature verification');
+  const m = { exports: {} as DdkModule };
+  process.dlopen(m, binPath);
+  return m.exports;
 }
 
 function getTaggedOutcomeHash(outcomeText: string): Buffer {
