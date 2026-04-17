@@ -58,6 +58,6 @@ app.get('/', (_req: Request, res: Response): void => {
   res.sendFile(path.join(__dirname, '../public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`DLC Verify server running at http://localhost:${PORT}`);
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`DLC Verify server running at http://0.0.0.0:${PORT}`);
 });
