@@ -51,6 +51,7 @@ Options:
   --sign <hex>            DLC sign message hex (optional)
   --attestation <hex>     Oracle attestation hex (requires --sign; produces broadcastable CET)
   --oracle-pubkey <hex>   Expected oracle x-only pubkey (optional)
+  --network <name>        Address network: mainnet (default) | testnet | regtest
   --help, -h              Show this help
 
 Examples:
@@ -95,6 +96,7 @@ function parseCliArgs(args: string[]): CliArgs {
     expectedOraclePubkey: null,
     signHex: null,
     attestationHex: null,
+    network: DEFAULT_NETWORK,
     showHelp: false,
   };
 
@@ -120,6 +122,14 @@ function parseCliArgs(args: string[]): CliArgs {
       parsed.attestationHex = args[++i];
       continue;
     }
+    if (arg === '--network' && args[i + 1]) {
+      const name = args[++i];
+      if (!NETWORK_NAMES.includes(name)) {
+        throw new Error(`Unknown --network "${name}". Expected one of: ${NETWORK_NAMES.join(', ')}`);
+      }
+      parsed.network = name;
+      continue;
+    }
     if (arg === '--oracle-pubkey' && args[i + 1]) {
       parsed.expectedOraclePubkey = args[++i];
     }
@@ -142,6 +152,8 @@ export async function verifyDlc(
 ): Promise<VerificationResult> {
   const result: VerificationResult = {
     // Structural verification
+    network: DEFAULT_NETWORK,
+    chainHashNetwork: null,
     contractType: null,
     totalCollateral: null,
     offerCollateral: null,
@@ -162,6 +174,10 @@ export async function verifyDlc(
     accepterFundingPubkey: null,
     fundingAddress: null,
     witnessScript: null,
+    offererPayoutAddress: null,
+    offererChangeAddress: null,
+    accepterPayoutAddress: null,
+    accepterChangeAddress: null,
     offerInputs: [],
     acceptInputs: [],
     contractId: null,
@@ -210,7 +226,12 @@ export async function verifyDlc(
     const offerCollateral = offer.offerCollateral;
     const acceptCollateral = accept.acceptCollateral;
 
-    const network = detectNetwork(offer.chainHash);
+    const { name: networkName, network } = resolveNetwork(options.network);
+    result.network = networkName;
+    result.chainHashNetwork = networkNameFromChainHash(offer.chainHash);
+    if (result.chainHashNetwork !== networkName) {
+      log(`chainHash says ${result.chainHashNetwork ?? 'unknown'} but rendering addresses as ${networkName}`);
+    }
     const fundingAddress = reconstructFundingAddress(offer.fundingPubkey, accept.fundingPubkey, network);
 
     // Populate basic fields
@@ -224,6 +245,12 @@ export async function verifyDlc(
     result.accepterFundingPubkey = accept.fundingPubkey.toString('hex');
     result.fundingAddress = fundingAddress.address || null;
     result.witnessScript = fundingAddress.witnessScriptHex;
+    const offererAddresses = partyAddresses(offer, network);
+    const accepterAddresses = partyAddresses(accept, network);
+    result.offererPayoutAddress = offererAddresses.payoutAddress;
+    result.offererChangeAddress = offererAddresses.changeAddress;
+    result.accepterPayoutAddress = accepterAddresses.payoutAddress;
+    result.accepterChangeAddress = accepterAddresses.changeAddress;
 
     // Contract type and outcomes
     if (descriptor instanceof EnumeratedDescriptor) {
@@ -571,15 +598,28 @@ function locktimeToHuman(locktime: number): string {
   return `block height ${locktime}`;
 }
 
-function detectNetwork(chainHash: Buffer): bitcoin.Network {
-  const entries = Object.values(BitcoinNetworks);
-  for (const net of entries) {
-    const netTyped = net as bitcoin.Network;
-    if (chainHash.equals(chainHashFromNetwork(netTyped))) {
-      return netTyped;
-    }
+const NETWORKS: Record<string, bitcoin.Network> = {
+  mainnet: BitcoinNetworks.bitcoin,
+  testnet: BitcoinNetworks.bitcoin_testnet,
+  regtest: BitcoinNetworks.bitcoin_regtest,
+};
+
+export const NETWORK_NAMES = Object.keys(NETWORKS);
+export const DEFAULT_NETWORK = 'mainnet';
+
+// ponytail: addresses render on the caller's network, not the offer's chainHash.
+// Lygos production offers carry the regtest chainHash, which used to render every
+// mainnet address as bcrt1. chainHash is still reported so a mismatch stays visible.
+function resolveNetwork(name?: string): { name: string; network: bitcoin.Network } {
+  const key = name && NETWORKS[name] ? name : DEFAULT_NETWORK;
+  return { name: key, network: NETWORKS[key] };
+}
+
+function networkNameFromChainHash(chainHash: Buffer): string | null {
+  for (const [name, net] of Object.entries(NETWORKS)) {
+    if (chainHash.equals(chainHashFromNetwork(net))) return name;
   }
-  return BitcoinNetworks.bitcoin_regtest;
+  return null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -685,6 +725,21 @@ function reconstructFundingAddress(
     witnessScriptHex: p2ms.output ? Buffer.from(p2ms.output).toString('hex') : 'n/a',
     scriptPubKeyHex: p2wsh.output ? Buffer.from(p2wsh.output).toString('hex') : null,
   };
+}
+
+// DlcOffer/DlcAccept both expose getAddresses(); it throws on a non-standard
+// spk, and a bad payout script shouldn't sink the rest of the verification.
+function partyAddresses(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  msg: any,
+  network: bitcoin.Network,
+): { payoutAddress: string | null; changeAddress: string | null } {
+  try {
+    const { payoutAddress, changeAddress } = msg.getAddresses(network);
+    return { payoutAddress, changeAddress };
+  } catch {
+    return { payoutAddress: null, changeAddress: null };
+  }
 }
 
 function getFundingScriptAndScriptPubKey(
@@ -905,9 +960,14 @@ async function initDdk(): Promise<DdkModule> {
   else if (platform === 'linux' && arch === 'x64') binName = 'ddk-ts.linux-x64-gnu.node';
   else throw new Error(`Unsupported platform for ddk-ts: ${platform}-${arch}`);
 
-  const binPath = path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist', binName);
-  if (!fs.existsSync(binPath)) {
-    throw new Error(`ddk-ts native binary not found: ${binPath}`);
+  // Since 0.3.42 the binary ships in a per-platform package; older versions bundled it in dist/.
+  const candidates = [
+    path.join(__dirname, `../node_modules/@bennyblader/ddk-ts-${binName.split('.')[1]}`, binName),
+    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist', binName),
+  ];
+  const binPath = candidates.find((p) => fs.existsSync(p));
+  if (!binPath) {
+    throw new Error(`ddk-ts native binary not found: ${candidates.join(', ')}`);
   }
   const m = { exports: {} as DdkModule };
   process.dlopen(m, binPath);
@@ -1155,9 +1215,15 @@ async function verifyAdaptorSignatures(
 }
 
 async function main(): Promise<void> {
-  const { offerHex, acceptHex, expectedOraclePubkey, signHex, attestationHex, showHelp } = parseCliArgs(
-    process.argv.slice(2),
-  );
+  const {
+    offerHex,
+    acceptHex,
+    expectedOraclePubkey,
+    signHex,
+    attestationHex,
+    network: cliNetwork,
+    showHelp,
+  } = parseCliArgs(process.argv.slice(2));
 
   if (showHelp) {
     console.log(HELP_TEXT);
@@ -1176,7 +1242,13 @@ async function main(): Promise<void> {
   const offerCollateral = offer.offerCollateral;
   const acceptCollateral = accept.acceptCollateral;
 
-  const network = detectNetwork(offer.chainHash);
+  const { name: networkName, network } = resolveNetwork(cliNetwork);
+  const chainHashNetwork = networkNameFromChainHash(offer.chainHash);
+  if (chainHashNetwork !== networkName) {
+    console.warn(
+      `warning: chainHash says ${chainHashNetwork ?? 'unknown'} but addresses are rendered as ${networkName}`,
+    );
+  }
   const fundingAddress = reconstructFundingAddress(offer.fundingPubkey, accept.fundingPubkey, network);
 
   let contractType = 'unknown';
@@ -1287,6 +1359,13 @@ async function main(): Promise<void> {
   lines.push(`Accepter funding pubkey: ${accept.fundingPubkey.toString('hex')}`);
   lines.push(`2-of-2 P2WSH address: ${fundingAddress.address || 'n/a'}`);
   lines.push(`2-of-2 witness script: ${fundingAddress.witnessScriptHex}`);
+  lines.push('');
+  const offererAddrs = partyAddresses(offer, network);
+  const accepterAddrs = partyAddresses(accept, network);
+  lines.push(`Offerer payout address: ${offererAddrs.payoutAddress || 'n/a'}`);
+  lines.push(`Offerer change address: ${offererAddrs.changeAddress || 'n/a'}`);
+  lines.push(`Accepter payout address: ${accepterAddrs.payoutAddress || 'n/a'}`);
+  lines.push(`Accepter change address: ${accepterAddrs.changeAddress || 'n/a'}`);
   lines.push('');
   lines.push('Offerer funding inputs:');
   for (const input of offerInputs) {

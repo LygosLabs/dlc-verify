@@ -10,6 +10,11 @@ export interface FundingInput {
 }
 
 export interface VerificationResult {
+  // Network used to render addresses, and what the offer's chainHash claims
+  // (null when the chainHash matches no known network). These can disagree.
+  network: string;
+  chainHashNetwork: string | null;
+
   // Structural verification (message parsing)
   contractType: string | null;
   totalCollateral: string | null;
@@ -31,6 +36,10 @@ export interface VerificationResult {
   accepterFundingPubkey: string | null;
   fundingAddress: string | null;
   witnessScript: string | null;
+  offererPayoutAddress: string | null;
+  offererChangeAddress: string | null;
+  accepterPayoutAddress: string | null;
+  accepterChangeAddress: string | null;
   offerInputs: FundingInput[];
   acceptInputs: FundingInput[];
   contractId: string | null;
@@ -76,6 +85,8 @@ export interface VerifyOptions {
   signHex?: string;
   attestationHex?: string;
   logPrefix?: string;
+  /** 'mainnet' | 'testnet' | 'regtest'. Unknown or absent falls back to mainnet. */
+  network?: string;
 }
 
 export interface CetExecutionResult {
@@ -91,6 +102,7 @@ export interface CliArgs {
   expectedOraclePubkey: string | null;
   signHex: string | null;
   attestationHex: string | null;
+  network: string;
   showHelp: boolean;
 }
 

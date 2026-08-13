@@ -108,6 +108,16 @@
                         <p class="text-xs text-gray-500 mt-2 leading-relaxed">Leave blank to derive the oracle pubkey from the DLC messages. Known-oracle matching is computed in the browser using the extracted pubkey.</p>
                     </div>
 
+                    <div class="mb-6">
+                        <label for="networkSelect" class="block text-sm font-medium text-gray-700 mb-2">Network</label>
+                        <select id="networkSelect" class="w-full sm:w-64 h-11 px-3 border-2 border-gray-200 rounded-card text-sm outline-none focus:border-blue-500 transition-colors bg-white">
+                            <option value="mainnet" selected>Mainnet</option>
+                            <option value="testnet">Testnet</option>
+                            <option value="regtest">Regtest</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-2 leading-relaxed">Controls how payout, change and funding addresses are encoded. Defaults to mainnet rather than trusting the offer's <code class="font-mono">chainHash</code> — a mismatch is flagged in the results.</p>
+                    </div>
+
                     <div class="flex justify-end">
                         <button id="verifyBtn" class="bg-gray-900 hover:bg-gray-800 text-white px-6 py-2 rounded-card text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed" onclick="doVerify()">Verify</button>
                     </div>
@@ -345,6 +355,11 @@
                     </div>
                     <div class="p-5 space-y-4">
                         <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Address Network</div>
+                            <span id="networkDisplay" class="font-mono text-sm text-gray-900">-</span>
+                            <p id="networkMismatch" class="hidden mt-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-card px-2.5 py-1.5 leading-relaxed"></p>
+                        </div>
+                        <div>
                             <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Contract ID</div>
                             <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
                                 <span id="contractIdDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
@@ -362,6 +377,34 @@
                             <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Funding Address</div>
                             <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
                                 <span id="fundingAddressDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Offerer Payout Address</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="offererPayoutAddressDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Offerer Change Address</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="offererChangeAddressDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Accepter Payout Address</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="accepterPayoutAddressDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Accepter Change Address</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="accepterChangeAddressDisplay" class="copy-text font-mono text-sm text-gray-900 break-all transition-colors flex-1 leading-tight">-</span>
                                 <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
                             </div>
                         </div>
@@ -623,6 +666,7 @@
                     offer: offerHex,
                     accept: acceptHex,
                     expectedOraclePubkey: oracleContext.expectedPubkey,
+                    network: document.getElementById('networkSelect').value,
                 };
                 if (signHex) {
                     payload.signHex = signHex;
@@ -823,6 +867,17 @@
             }
 
             // Identifiers & Scripts
+            document.getElementById('networkDisplay').textContent = result.network || '-';
+            const mismatchEl = document.getElementById('networkMismatch');
+            if (result.chainHashNetwork && result.network && result.chainHashNetwork !== result.network) {
+                mismatchEl.textContent = `Offer chainHash declares ${result.chainHashNetwork}, but addresses are rendered as ${result.network}. The witness programs are identical — only the bech32 prefix differs.`;
+                mismatchEl.classList.remove('hidden');
+            } else if (result.chainHashNetwork === null) {
+                mismatchEl.textContent = `Offer chainHash matches no known network. Addresses are rendered as ${result.network}.`;
+                mismatchEl.classList.remove('hidden');
+            } else {
+                mismatchEl.classList.add('hidden');
+            }
             document.getElementById('contractIdDisplay').textContent = result.contractId || '-';
             setCopyData('contractIdDisplay', result.contractId || '');
 
@@ -831,6 +886,11 @@
 
             document.getElementById('fundingAddressDisplay').textContent = result.fundingAddress || '-';
             setCopyData('fundingAddressDisplay', result.fundingAddress || '');
+
+            for (const field of ['offererPayoutAddress', 'offererChangeAddress', 'accepterPayoutAddress', 'accepterChangeAddress']) {
+                document.getElementById(field + 'Display').textContent = result[field] || '-';
+                setCopyData(field + 'Display', result[field] || '');
+            }
 
             document.getElementById('witnessScriptDisplay').textContent = result.witnessScript || '-';
             setCopyData('witnessScriptDisplay', result.witnessScript || '');
