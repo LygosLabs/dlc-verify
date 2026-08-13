@@ -31,6 +31,10 @@ export interface VerificationResult {
   accepterFundingPubkey: string | null;
   fundingAddress: string | null;
   witnessScript: string | null;
+  offererPayoutAddress: string | null;
+  offererChangeAddress: string | null;
+  accepterPayoutAddress: string | null;
+  accepterChangeAddress: string | null;
   offerInputs: FundingInput[];
   acceptInputs: FundingInput[];
   contractId: string | null;

@@ -162,6 +162,10 @@ export async function verifyDlc(
     accepterFundingPubkey: null,
     fundingAddress: null,
     witnessScript: null,
+    offererPayoutAddress: null,
+    offererChangeAddress: null,
+    accepterPayoutAddress: null,
+    accepterChangeAddress: null,
     offerInputs: [],
     acceptInputs: [],
     contractId: null,
@@ -224,6 +228,12 @@ export async function verifyDlc(
     result.accepterFundingPubkey = accept.fundingPubkey.toString('hex');
     result.fundingAddress = fundingAddress.address || null;
     result.witnessScript = fundingAddress.witnessScriptHex;
+    const offererAddresses = partyAddresses(offer, network);
+    const accepterAddresses = partyAddresses(accept, network);
+    result.offererPayoutAddress = offererAddresses.payoutAddress;
+    result.offererChangeAddress = offererAddresses.changeAddress;
+    result.accepterPayoutAddress = accepterAddresses.payoutAddress;
+    result.accepterChangeAddress = accepterAddresses.changeAddress;
 
     // Contract type and outcomes
     if (descriptor instanceof EnumeratedDescriptor) {
@@ -685,6 +695,21 @@ function reconstructFundingAddress(
     witnessScriptHex: p2ms.output ? Buffer.from(p2ms.output).toString('hex') : 'n/a',
     scriptPubKeyHex: p2wsh.output ? Buffer.from(p2wsh.output).toString('hex') : null,
   };
+}
+
+// DlcOffer/DlcAccept both expose getAddresses(); it throws on a non-standard
+// spk, and a bad payout script shouldn't sink the rest of the verification.
+function partyAddresses(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  msg: any,
+  network: bitcoin.Network,
+): { payoutAddress: string | null; changeAddress: string | null } {
+  try {
+    const { payoutAddress, changeAddress } = msg.getAddresses(network);
+    return { payoutAddress, changeAddress };
+  } catch {
+    return { payoutAddress: null, changeAddress: null };
+  }
 }
 
 function getFundingScriptAndScriptPubKey(
@@ -1287,6 +1312,13 @@ async function main(): Promise<void> {
   lines.push(`Accepter funding pubkey: ${accept.fundingPubkey.toString('hex')}`);
   lines.push(`2-of-2 P2WSH address: ${fundingAddress.address || 'n/a'}`);
   lines.push(`2-of-2 witness script: ${fundingAddress.witnessScriptHex}`);
+  lines.push('');
+  const offererAddrs = partyAddresses(offer, network);
+  const accepterAddrs = partyAddresses(accept, network);
+  lines.push(`Offerer payout address: ${offererAddrs.payoutAddress || 'n/a'}`);
+  lines.push(`Offerer change address: ${offererAddrs.changeAddress || 'n/a'}`);
+  lines.push(`Accepter payout address: ${accepterAddrs.payoutAddress || 'n/a'}`);
+  lines.push(`Accepter change address: ${accepterAddrs.changeAddress || 'n/a'}`);
   lines.push('');
   lines.push('Offerer funding inputs:');
   for (const input of offerInputs) {
