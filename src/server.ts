@@ -13,15 +13,16 @@ interface VerifyRequestBody {
   accept?: string;
   expectedOraclePubkey?: string;
   signHex?: string;
+  network?: string;
 }
 
 app.post('/api/verify', async (req: Request<object, object, VerifyRequestBody>, res: Response): Promise<void> => {
-  const { offer, accept, expectedOraclePubkey, signHex } = req.body;
+  const { offer, accept, expectedOraclePubkey, signHex, network } = req.body;
   const reqId = Math.random().toString(36).slice(2, 8);
   const t0 = Date.now();
 
   console.log(
-    `[verify:${reqId}] incoming offer=${offer?.length ?? 0} accept=${accept?.length ?? 0} sign=${signHex?.length ?? 0} expectedOraclePubkey=${expectedOraclePubkey ?? 'none'}`,
+    `[verify:${reqId}] incoming offer=${offer?.length ?? 0} accept=${accept?.length ?? 0} sign=${signHex?.length ?? 0} expectedOraclePubkey=${expectedOraclePubkey ?? 'none'} network=${network ?? 'default'}`,
   );
 
   if (!offer || !accept) {
@@ -31,9 +32,15 @@ app.post('/api/verify', async (req: Request<object, object, VerifyRequestBody>, 
   }
 
   try {
-    const result = await verifyDlc(offer, accept, { expectedOraclePubkey, signHex, logPrefix: `verify:${reqId}` });
+    const result = await verifyDlc(offer, accept, {
+      expectedOraclePubkey,
+      signHex,
+      network,
+      logPrefix: `verify:${reqId}`,
+    });
     console.log(
       `[verify:${reqId}] done in ${Date.now() - t0}ms error=${result.error ?? 'null'} ` +
+        `network=${result.network} chainHashNetwork=${result.chainHashNetwork ?? 'unknown'} ` +
         `contractType=${result.contractType} contractId=${result.contractId ?? 'null'} ` +
         `oracleSigValid=${result.oracleSigValid} ` +
         `adaptorAvailable=${result.adaptorSigVerificationAvailable} adaptorValid=${result.adaptorValid} ` +
