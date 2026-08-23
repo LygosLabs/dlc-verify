@@ -415,8 +415,8 @@ describe('DLC Verification', () => {
     });
   });
 
-  describe('Chainlink oracle event ID policy', () => {
-    it('matches the Chainlink create-loan event ID derivation', () => {
+  describe('Loan oracle event ID policy', () => {
+    it('matches the canonical loan event ID derivation', () => {
       expect(
         deriveLygosOracleEventId({
           eventType: ' loan-matured ',

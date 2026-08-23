@@ -97,7 +97,7 @@ function sha256Canonical(value: unknown): string {
     .digest('hex');
 }
 
-/** Matches packages/workflows/create-loan/event-id.ts in LygosLabs/chainlink-oracle. */
+/** Derives the Lygos loan oracle event ID from the canonical repayment-term preimage. */
 export function deriveLygosOracleEventId(input: OracleEventPreimage): string {
   const eventType = input.eventType.trim();
   const payload = [eventType, input.loanId.trim(), input.repaymentAddress.trim(), input.repaymentAmount.trim()].join(

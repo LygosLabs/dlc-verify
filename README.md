@@ -97,7 +97,7 @@ The result includes:
 - A domain-separated transcript hash over offer/accept/sign
 - A canonical `lygos.dlc-verification.v1` attestation payload and digest for TVC to sign
 
-The Chainlink event ID derivation matches `LygosLabs/chainlink-oracle`:
+The loan oracle event ID is derived as:
 
 ```text
 eventType-SHA256(eventType//loanId//repaymentAddress//repaymentAmount)
