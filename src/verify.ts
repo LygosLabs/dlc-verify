@@ -123,8 +123,6 @@ function finalizeVerificationStatus(result: VerificationResult, signRequested: b
 
   if (result.error) failures.push('message-parsing-or-reconstruction-failed');
   if (!result.oracleSigValid) failures.push('oracle-announcement-signature-invalid');
-  if (result.oraclePubkeyMatchesExpected === false) failures.push('oracle-pubkey-mismatch');
-  if (result.expectedOraclePubkey === null) incomplete.push('expected-oracle-pubkey-not-provided');
   if (!result.adaptorSigVerificationAvailable) failures.push('accepter-adaptor-verification-unavailable');
   else if (result.adaptorValid !== true) failures.push('accepter-adaptor-signatures-invalid');
   if (result.refundSigValid !== true) failures.push('accepter-refund-signature-invalid-or-unavailable');

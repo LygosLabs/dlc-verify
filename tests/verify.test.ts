@@ -288,6 +288,17 @@ describe('DLC Verification', () => {
       expect(result.cets).toHaveLength(result.outcomes.length);
     });
 
+    it('keeps cryptographic verification independent from policy expectations', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        network: 'regtest',
+      });
+
+      expect(result.verificationStatus).toBe('pass');
+      expect(result.expectedOraclePubkey).toBeNull();
+      expect(result.verificationIncomplete).toEqual([]);
+    });
+
     it('fails when the accepter refund signature is changed', async () => {
       const result = await verifyDlc(
         signedSample.offer,
@@ -345,9 +356,62 @@ describe('DLC Verification', () => {
       });
 
       expect(result.verdict).toBe('pass');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.policyCoverage).toBe('complete');
       expect(result.checks.every((check) => check.status === 'pass')).toBe(true);
       expect(result.verificationDigest).toMatch(/^[0-9a-f]{64}$/);
       expect(result.attestationPayload.cetTxids).toHaveLength(baseline.cets.length);
+    });
+
+    it('supports cryptographic verification without any policy', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign);
+
+      expect(result.verdict).toBe('incomplete');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('not_provided');
+      expect(result.policyCoverage).toBe('not_provided');
+      expect(result.checks).toEqual([]);
+      expect(result.attestationPayload.policyHash).toBeNull();
+    });
+
+    it('supports an oracle-pubkey-only partial policy', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        expectedOraclePubkey: signedSample.oraclePubkey,
+      });
+
+      expect(result.verdict).toBe('incomplete');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.policyCoverage).toBe('partial');
+      expect(result.checks).toEqual([
+        expect.objectContaining({ id: 'oracle-pubkey', status: 'pass' }),
+      ]);
+    });
+
+    it('can evaluate a partial policy without DlcSign while marking crypto incomplete', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, undefined, {
+        expectedOraclePubkey: signedSample.oraclePubkey,
+      });
+
+      expect(result.verdict).toBe('incomplete');
+      expect(result.cryptographicVerification).toBe('incomplete');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.policyCoverage).toBe('partial');
+    });
+
+    it('fails only the supplied partial policy when the oracle pubkey mismatches', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        expectedOraclePubkey: generateRandomXOnlyPubkey(),
+      });
+
+      expect(result.verdict).toBe('fail');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('fail');
+      expect(result.policyCoverage).toBe('partial');
+      expect(result.checks).toEqual([
+        expect.objectContaining({ id: 'oracle-pubkey', status: 'fail' }),
+      ]);
     });
   });
 

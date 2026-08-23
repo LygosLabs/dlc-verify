@@ -65,7 +65,30 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 
 ### Verified-compute policy verification
 
-`verifyDlcAgainstPolicy()` and `POST /api/verify-policy` fail closed across the complete message set. The caller supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
+`verifyDlcAgainstPolicy()` and `POST /api/verify-policy` accept an optional, sparse policy. The verifier always performs every cryptographic check supported by the supplied DLC messages, then evaluates only the policy expectations the caller supplied. A borrower can provide no policy, only an expected oracle pubkey, or a complete lender policy.
+
+A complete TVC lender policy supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
+
+The response keeps three concepts separate:
+
+- `cryptographicVerification` — `pass`, `fail`, or `incomplete`, based only on message/signature verification
+- `policyVerification` — `not_provided`, `pass`, or `fail`, based only on supplied expectations
+- `policyCoverage` — `not_provided`, `partial`, or `complete`
+
+The overall TVC `verdict` is `pass` only when cryptographic verification passes and a complete policy passes. A matching partial policy returns `verdict: "incomplete"` alongside `policyVerification: "pass"`; any supplied expectation mismatch returns `verdict: "fail"`.
+
+For example, an oracle-only policy is valid:
+
+```json
+{
+  "offer": "<offer hex>",
+  "accept": "<accept hex>",
+  "signHex": "<optional sign hex>",
+  "policy": {
+    "expectedOraclePubkey": "<expected x-only oracle pubkey>"
+  }
+}
+```
 
 The result includes:
 

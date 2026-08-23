@@ -69,8 +69,8 @@ app.post(
   '/api/verify-policy',
   async (req: Request<object, object, PolicyVerifyRequestBody>, res: Response): Promise<void> => {
     const { offer, accept, signHex, policy } = req.body;
-    if (!offer || !accept || !signHex || !policy) {
-      res.status(400).json({ error: 'Missing required fields: offer, accept, signHex, policy' });
+    if (!offer || !accept) {
+      res.status(400).json({ error: 'Missing required fields: offer, accept' });
       return;
     }
 

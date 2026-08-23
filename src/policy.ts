@@ -19,17 +19,21 @@ export interface ExpectedLenderOutcome {
 }
 
 export interface DlcVerificationPolicy {
-  lenderRole: DlcPartyRole;
-  network: 'mainnet' | 'testnet' | 'regtest';
-  expectedOraclePubkey: string;
-  expectedLenderFundingPubkey: string;
-  expectedLenderPayoutAddress: string;
-  expectedTotalCollateralSats: string;
-  oracleEvent: OracleEventExpectation;
+  lenderRole?: DlcPartyRole;
+  network?: 'mainnet' | 'testnet' | 'regtest';
+  expectedOraclePubkey?: string;
+  expectedLenderFundingPubkey?: string;
+  expectedLenderPayoutAddress?: string;
+  expectedTotalCollateralSats?: string;
+  oracleEvent?: OracleEventExpectation;
   expectedCetLocktime?: number;
   expectedRefundLocktime?: number;
   expectedLenderOutcomes?: ExpectedLenderOutcome[];
 }
+
+export type PolicyCoverage = 'not_provided' | 'partial' | 'complete';
+export type PolicyVerificationStatus = 'not_provided' | 'pass' | 'fail';
+export type TvcVerdict = 'pass' | 'fail' | 'incomplete';
 
 export interface PolicyCheck {
   id: string;
@@ -40,9 +44,12 @@ export interface PolicyCheck {
 
 export interface TvcAttestationPayload {
   schemaVersion: 'lygos.dlc-verification.v1';
-  verdict: 'pass' | 'fail';
+  verdict: TvcVerdict;
+  cryptographicVerification: VerificationResult['verificationStatus'];
+  policyVerification: PolicyVerificationStatus;
+  policyCoverage: PolicyCoverage;
   transcriptHash: string;
-  policyHash: string;
+  policyHash: string | null;
   contractId: string | null;
   fundingTxId: string | null;
   fundOutputIndex: number | null;
@@ -57,7 +64,10 @@ export interface TvcAttestationPayload {
 }
 
 export interface TvcVerificationResult {
-  verdict: 'pass' | 'fail';
+  verdict: TvcVerdict;
+  cryptographicVerification: VerificationResult['verificationStatus'];
+  policyVerification: PolicyVerificationStatus;
+  policyCoverage: PolicyCoverage;
   checks: PolicyCheck[];
   verificationDigest: string;
   attestationPayload: TvcAttestationPayload;
@@ -111,58 +121,113 @@ function addCheck(checks: PolicyCheck[], id: string, expected: unknown, actual: 
   });
 }
 
+const COMPLETE_POLICY_FIELDS: Array<keyof DlcVerificationPolicy> = [
+  'lenderRole',
+  'network',
+  'expectedOraclePubkey',
+  'expectedLenderFundingPubkey',
+  'expectedLenderPayoutAddress',
+  'expectedTotalCollateralSats',
+  'oracleEvent',
+];
+
+function hasValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== '';
+}
+
+function policyCoverage(policy: DlcVerificationPolicy | undefined): PolicyCoverage {
+  if (!policy || !Object.values(policy).some(hasValue)) return 'not_provided';
+  return COMPLETE_POLICY_FIELDS.every((field) => hasValue(policy[field])) ? 'complete' : 'partial';
+}
+
 export function evaluateDlcPolicy(
   verification: VerificationResult,
-  policy: DlcVerificationPolicy,
+  policy?: DlcVerificationPolicy,
 ): TvcVerificationResult {
   const checks: PolicyCheck[] = [];
   const lenderFundingPubkey =
-    policy.lenderRole === 'offerer' ? verification.offererFundingPubkey : verification.accepterFundingPubkey;
+    policy?.lenderRole === 'offerer'
+      ? verification.offererFundingPubkey
+      : policy?.lenderRole === 'accepter'
+        ? verification.accepterFundingPubkey
+        : null;
   const lenderPayoutAddress =
-    policy.lenderRole === 'offerer' ? verification.offererPayoutAddress : verification.accepterPayoutAddress;
+    policy?.lenderRole === 'offerer'
+      ? verification.offererPayoutAddress
+      : policy?.lenderRole === 'accepter'
+        ? verification.accepterPayoutAddress
+        : null;
 
-  addCheck(checks, 'cryptographic-verification', 'pass', verification.verificationStatus);
-  addCheck(checks, 'network', policy.network, verification.chainHashNetwork);
-  addCheck(
-    checks,
-    'oracle-pubkey',
-    normalizeHex(policy.expectedOraclePubkey),
-    verification.extractedOraclePubkey ? normalizeHex(verification.extractedOraclePubkey) : null,
-  );
-  addCheck(
-    checks,
-    'lender-funding-pubkey',
-    normalizeHex(policy.expectedLenderFundingPubkey),
-    lenderFundingPubkey ? normalizeHex(lenderFundingPubkey) : null,
-  );
-  addCheck(checks, 'lender-payout-address', policy.expectedLenderPayoutAddress, lenderPayoutAddress);
-  addCheck(
-    checks,
-    'refund-pays-lender-address',
-    true,
-    verification.refundOutputs.some((output) => output.address === policy.expectedLenderPayoutAddress),
-  );
-  addCheck(checks, 'total-collateral-sats', policy.expectedTotalCollateralSats, verification.totalCollateral);
-  addCheck(checks, 'oracle-event-id', expectedEventId(policy.oracleEvent), verification.oracleEventId);
-
-  if (policy.expectedCetLocktime !== undefined) {
+  if (policy?.network !== undefined) {
+    addCheck(checks, 'network', policy.network, verification.chainHashNetwork);
+  }
+  if (policy?.expectedOraclePubkey !== undefined) {
+    addCheck(
+      checks,
+      'oracle-pubkey',
+      normalizeHex(policy.expectedOraclePubkey),
+      verification.extractedOraclePubkey ? normalizeHex(verification.extractedOraclePubkey) : null,
+    );
+  }
+  if (policy?.expectedLenderFundingPubkey !== undefined) {
+    addCheck(
+      checks,
+      'lender-funding-pubkey',
+      normalizeHex(policy.expectedLenderFundingPubkey),
+      lenderFundingPubkey ? normalizeHex(lenderFundingPubkey) : null,
+    );
+  }
+  if (policy?.expectedLenderPayoutAddress !== undefined) {
+    addCheck(checks, 'lender-payout-address', policy.expectedLenderPayoutAddress, lenderPayoutAddress);
+    addCheck(
+      checks,
+      'refund-pays-lender-address',
+      true,
+      verification.refundOutputs.some((output) => output.address === policy.expectedLenderPayoutAddress),
+    );
+  }
+  if (policy?.expectedTotalCollateralSats !== undefined) {
+    addCheck(checks, 'total-collateral-sats', policy.expectedTotalCollateralSats, verification.totalCollateral);
+  }
+  if (policy?.oracleEvent !== undefined) {
+    addCheck(checks, 'oracle-event-id', expectedEventId(policy.oracleEvent), verification.oracleEventId);
+  }
+  if (policy?.expectedCetLocktime !== undefined) {
     addCheck(checks, 'cet-locktime', policy.expectedCetLocktime, verification.cetLocktime);
   }
-  if (policy.expectedRefundLocktime !== undefined) {
+  if (policy?.expectedRefundLocktime !== undefined) {
     addCheck(checks, 'refund-locktime', policy.expectedRefundLocktime, verification.refundLocktime);
   }
 
-  for (const expectation of policy.expectedLenderOutcomes ?? []) {
+  for (const expectation of policy?.expectedLenderOutcomes ?? []) {
     const outcome = verification.outcomes.find((candidate) => candidate.label === expectation.outcome);
-    const actual = outcome ? (policy.lenderRole === 'offerer' ? outcome.offererSats : outcome.accepterSats) : null;
+    const actual = outcome
+      ? policy?.lenderRole === 'offerer'
+        ? outcome.offererSats
+        : policy?.lenderRole === 'accepter'
+          ? outcome.accepterSats
+          : null
+      : null;
     addCheck(checks, `lender-outcome:${expectation.outcome}`, expectation.lenderPayoutSats, actual);
   }
 
-  const verdict = checks.every((check) => check.status === 'pass') ? 'pass' : 'fail';
-  const policyHash = sha256Canonical(policy);
+  const coverage = policyCoverage(policy);
+  const policyVerification: PolicyVerificationStatus =
+    checks.length === 0 ? 'not_provided' : checks.every((check) => check.status === 'pass') ? 'pass' : 'fail';
+  const cryptographicVerification = verification.verificationStatus;
+  const verdict: TvcVerdict =
+    cryptographicVerification === 'fail' || policyVerification === 'fail'
+      ? 'fail'
+      : cryptographicVerification === 'pass' && coverage === 'complete' && policyVerification === 'pass'
+        ? 'pass'
+        : 'incomplete';
+  const policyHash = coverage === 'not_provided' ? null : sha256Canonical(policy);
   const attestationPayload: TvcAttestationPayload = {
     schemaVersion: 'lygos.dlc-verification.v1',
     verdict,
+    cryptographicVerification,
+    policyVerification,
+    policyCoverage: coverage,
     transcriptHash: verification.transcriptHash,
     policyHash,
     contractId: verification.contractId,
@@ -180,6 +245,9 @@ export function evaluateDlcPolicy(
 
   return {
     verdict,
+    cryptographicVerification,
+    policyVerification,
+    policyCoverage: coverage,
     checks,
     verificationDigest: sha256Canonical(attestationPayload),
     attestationPayload,
@@ -190,13 +258,13 @@ export function evaluateDlcPolicy(
 export async function verifyDlcAgainstPolicy(
   offerHex: string,
   acceptHex: string,
-  signHex: string,
-  policy: DlcVerificationPolicy,
+  signHex?: string,
+  policy?: DlcVerificationPolicy,
 ): Promise<TvcVerificationResult> {
   const verification = await verifyDlc(offerHex, acceptHex, {
     signHex,
-    expectedOraclePubkey: policy.expectedOraclePubkey,
-    network: policy.network,
+    expectedOraclePubkey: policy?.expectedOraclePubkey,
+    network: policy?.network,
   });
   return evaluateDlcPolicy(verification, policy);
 }
