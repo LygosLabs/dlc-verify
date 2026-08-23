@@ -31,7 +31,8 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Inspect payout outcomes and collateral splits before signing
 - Verify oracle identity, event IDs, locktimes, and funding data
 - Confirm CET adaptor signatures are cryptographically valid
-- Verify DlcSign message: contract ID match and offerer adaptor signatures
+- Verify both parties' CET adaptor signatures and refund signatures
+- Apply explicit lender/oracle/collateral/event-ID policy and return a deterministic TVC attestation payload
 - Run it locally or self-host it without trusting a third-party backend
 
 ---
@@ -59,7 +60,27 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 ### Sign message verification (optional)
 
 - Verifies the DlcSign contract ID matches the computed contract ID from the offer/accept
-- Verifies the offerer's CET adaptor signatures from the sign message
+- Cryptographically verifies the offerer's CET adaptor signatures from the sign message
+- Verifies the offerer's refund signature against the reconstructed refund transaction
+
+### Verified-compute policy verification
+
+`verifyDlcAgainstPolicy()` and `POST /api/verify-policy` fail closed across the complete message set. The caller supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
+
+The result includes:
+
+- A pass/fail check for every expected term
+- Deterministically reconstructed funding output, refund transaction, and CET transaction IDs
+- A domain-separated transcript hash over offer/accept/sign
+- A canonical `lygos.dlc-verification.v1` attestation payload and digest for TVC to sign
+
+The Chainlink event ID derivation matches `LygosLabs/chainlink-oracle`:
+
+```text
+eventType-SHA256(eventType//loanId//repaymentAddress//repaymentAmount)
+```
+
+Bitcoin block inclusion and unspent-output checks intentionally remain outside this library. A TVC adapter can query its approved Bitcoin RPC and bind the result to `fundingTxId` and `fundOutputIndex` from the attestation payload.
 
 ### CET execution (optional — escape hatch)
 
@@ -165,6 +186,7 @@ The verification steps:
 ```
 src/
 ├── verify.ts          # Main verification logic (CLI + library)
+├── policy.ts          # Fail-closed lender/TVC policy and attestation payload
 ├── server.ts          # Express web server
 └── types.ts           # TypeScript interfaces
 
@@ -182,8 +204,9 @@ Verification layers:
 │   └── P2WSH address reconstruction (bitcoinjs-lib)
 │
 └── Cryptographic: DDK native binary (@bennyblader/ddk-ts)
-    ├── createDlcTransactions() → fund TX + CETs
-    └── verifyCetAdaptorSigsFromOracleInfo() → true/false
+    ├── createDlcTransactions() → fund TX + CETs + refund TX
+    ├── verifyCetAdaptorSigsFromOracleInfo() → true/false
+    └── secp256k1 ECDSA verification → both refund signatures
 ```
 
 No backend. No wallet. No private keys. Stateless.
@@ -202,8 +225,9 @@ No backend. No wallet. No private keys. Stateless.
 ## Roadmap
 
 - [ ] Accept hex via stdin in addition to CLI args
-- [x] DlcSign verification (contract ID match + offerer adaptor signatures)
-- [ ] Refund signature verification
+- [x] DlcSign verification (contract ID match + cryptographic offerer adaptor signatures)
+- [x] Refund signature verification for DlcAccept and DlcSign
+- [x] Fail-closed policy verification and deterministic TVC attestation payload
 - [ ] Broader DLC shape support beyond the current enumerated focus
 - [ ] Oracle pubkey registry / known-oracle presets for hosted deployments
 - [ ] Optional hosted instance

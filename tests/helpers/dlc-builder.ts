@@ -7,7 +7,7 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { DlcOffer, DlcAccept } = require('@node-dlc/messaging');
+const { DlcOffer, DlcAccept, DlcSign } = require('@node-dlc/messaging');
 
 export interface DlcOfferMessage {
   contractInfo: {
@@ -68,6 +68,16 @@ export interface DlcAcceptMessage {
   cetAdaptorSignatures?: {
     sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
   };
+  refundSignature: Buffer;
+  serialize: () => Buffer;
+}
+
+export interface DlcSignMessage {
+  contractId: Buffer;
+  cetAdaptorSignatures?: {
+    sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
+  };
+  refundSignature: Buffer;
   serialize: () => Buffer;
 }
 
@@ -97,6 +107,14 @@ export function serializeOffer(offer: DlcOfferMessage): string {
  */
 export function serializeAccept(accept: DlcAcceptMessage): string {
   return accept.serialize().toString('hex');
+}
+
+export function deserializeSign(hex: string): DlcSignMessage {
+  return DlcSign.deserialize(Buffer.from(hex, 'hex'));
+}
+
+export function serializeSign(sign: DlcSignMessage): string {
+  return sign.serialize().toString('hex');
 }
 
 /**
@@ -208,6 +226,25 @@ export function corruptAdaptorSignatures(acceptHex: string): string {
   }
 
   return serializeAccept(accept);
+}
+
+export function corruptAcceptRefundSignature(acceptHex: string): string {
+  const accept = deserializeAccept(acceptHex);
+  accept.refundSignature[0] ^= 0xff;
+  return serializeAccept(accept);
+}
+
+export function corruptSignAdaptorSignatures(signHex: string): string {
+  const sign = deserializeSign(signHex);
+  const firstSig = sign.cetAdaptorSignatures?.sigs?.[0];
+  if (firstSig) firstSig.encryptedSig[0] ^= 0xff;
+  return serializeSign(sign);
+}
+
+export function corruptSignRefundSignature(signHex: string): string {
+  const sign = deserializeSign(signHex);
+  sign.refundSignature[0] ^= 0xff;
+  return serializeSign(sign);
 }
 
 /**

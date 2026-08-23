@@ -1,4 +1,7 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
+import { deriveLygosOracleEventId, verifyDlcAgainstPolicy } from '../src/policy';
 import { verifyDlc } from '../src/verify';
 import {
   loadSampleData,
@@ -15,6 +18,9 @@ import {
   generateRandomPubkey,
   generateRandomXOnlyPubkey,
   corruptAdaptorSignatures,
+  corruptAcceptRefundSignature,
+  corruptSignAdaptorSignatures,
+  corruptSignRefundSignature,
 } from './helpers/dlc-builder';
 
 describe('DLC Verification', () => {
@@ -256,6 +262,117 @@ describe('DLC Verification', () => {
       const result = await verifyDlc(sampleOffer, sampleAccept);
 
       expect(result.oracleEventId).toBeTruthy();
+    });
+  });
+
+  describe('Complete DlcSign and refund verification', () => {
+    const signedSample = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../examples/testnet-loan-118c9fc9.json'), 'utf8'),
+    ) as { offer: string; accept: string; sign: string; oraclePubkey: string };
+
+    it('cryptographically verifies both adaptor sets and both refund signatures', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.verificationStatus).toBe('pass');
+      expect(result.adaptorValid).toBe(true);
+      expect(result.refundSigValid).toBe(true);
+      expect(result.signAdaptorValid).toBe(true);
+      expect(result.signRefundSigValid).toBe(true);
+      expect(result.signContractIdMatches).toBe(true);
+      expect(result.refundTxId).toBeTruthy();
+      expect(result.fundOutputIndex).not.toBeNull();
+      expect(result.cets).toHaveLength(result.outcomes.length);
+    });
+
+    it('fails when the accepter refund signature is changed', async () => {
+      const result = await verifyDlc(
+        signedSample.offer,
+        corruptAcceptRefundSignature(signedSample.accept),
+        {
+          signHex: signedSample.sign,
+          expectedOraclePubkey: signedSample.oraclePubkey,
+          network: 'regtest',
+        },
+      );
+
+      expect(result.refundSigValid).toBe(false);
+      expect(result.verificationStatus).toBe('fail');
+    });
+
+    it('fails when an offerer adaptor signature is changed', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: corruptSignAdaptorSignatures(signedSample.sign),
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.signAdaptorValid).toBe(false);
+      expect(result.verificationStatus).toBe('fail');
+    });
+
+    it('fails when the offerer refund signature is changed', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: corruptSignRefundSignature(signedSample.sign),
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.signRefundSigValid).toBe(false);
+      expect(result.verificationStatus).toBe('fail');
+    });
+
+    it('evaluates lender terms and returns a deterministic TVC payload', async () => {
+      const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        lenderRole: 'offerer',
+        network: 'regtest',
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        expectedLenderFundingPubkey: baseline.offererFundingPubkey!,
+        expectedLenderPayoutAddress: baseline.offererPayoutAddress!,
+        expectedTotalCollateralSats: baseline.totalCollateral!,
+        oracleEvent: { expectedEventId: baseline.oracleEventId! },
+        expectedCetLocktime: baseline.cetLocktime!,
+        expectedRefundLocktime: baseline.refundLocktime!,
+        expectedLenderOutcomes: [{ outcome: 'repaid', lenderPayoutSats: '8000' }],
+      });
+
+      expect(result.verdict).toBe('pass');
+      expect(result.checks.every((check) => check.status === 'pass')).toBe(true);
+      expect(result.verificationDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(result.attestationPayload.cetTxids).toHaveLength(baseline.cets.length);
+    });
+  });
+
+  describe('Chainlink oracle event ID policy', () => {
+    it('matches the Chainlink create-loan event ID derivation', () => {
+      expect(
+        deriveLygosOracleEventId({
+          eventType: ' loan-matured ',
+          loanId: ' loan-123 ',
+          repaymentAddress: ' bc1qrepayment ',
+          repaymentAmount: ' 100000 ',
+        }),
+      ).toBe('loan-matured-3a0c8f7e56452482f216ca063904ee5f58c7cfe2e245982599955fcae2668071');
+    });
+
+    it('binds the repayment address into the derived event ID', () => {
+      const base = {
+        eventType: 'loan-matured',
+        loanId: 'loan-123',
+        repaymentAddress: 'bc1qrepayment',
+        repaymentAmount: '100000',
+      };
+      expect(deriveLygosOracleEventId(base)).not.toBe(
+        deriveLygosOracleEventId({ ...base, repaymentAddress: 'bc1qdifferent' }),
+      );
     });
   });
 });

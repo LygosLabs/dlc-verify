@@ -1,5 +1,7 @@
 import * as path from 'node:path';
 import express, { Request, Response } from 'express';
+import type { DlcVerificationPolicy } from './policy';
+import { verifyDlcAgainstPolicy } from './policy';
 import { executeCet, verifyDlc } from './verify';
 
 const app = express();
@@ -55,6 +57,30 @@ app.post('/api/verify', async (req: Request<object, object, VerifyRequestBody>, 
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+interface PolicyVerifyRequestBody {
+  offer?: string;
+  accept?: string;
+  signHex?: string;
+  policy?: DlcVerificationPolicy;
+}
+
+app.post(
+  '/api/verify-policy',
+  async (req: Request<object, object, PolicyVerifyRequestBody>, res: Response): Promise<void> => {
+    const { offer, accept, signHex, policy } = req.body;
+    if (!offer || !accept || !signHex || !policy) {
+      res.status(400).json({ error: 'Missing required fields: offer, accept, signHex, policy' });
+      return;
+    }
+
+    try {
+      res.json(await verifyDlcAgainstPolicy(offer, accept, signHex, policy));
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  },
+);
 
 interface ExecuteRequestBody {
   offer?: string;

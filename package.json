@@ -34,7 +34,7 @@
     "@atomicfinance/bitcoin-cfd-provider": "^4.2.7",
     "@atomicfinance/bitcoin-dlc-provider": "^4.2.7",
     "@atomicfinance/client": "^4.2.7",
-    "@bennyblader/ddk-ts": "^0.3.35",
+    "@bennyblader/ddk-ts": "^0.3.42",
     "@node-dlc/core": "^1.1.9",
     "@node-dlc/messaging": "^1.1.9",
     "bip-schnorr": "^0.6.7",
@@ -42,7 +42,8 @@
     "bitcoinjs-lib": "^7.0.1",
     "cfd-dlc-js-wasm": "github:atomicfinance/cfd-dlc-js-wasm#v1.0.6",
     "cfd-js-wasm": "github:atomicfinance/cfd-js-wasm#v0.4.10",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "secp256k1": "^5.0.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
