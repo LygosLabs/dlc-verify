@@ -91,7 +91,7 @@ export interface VerificationResult {
   signRefundSigValid: boolean | null;
   signRefundSigError: string | null;
 
-  // Fail-closed summary for callers such as a verified-compute runtime.
+  // Fail-closed summary for downstream verification consumers.
   verificationStatus: VerificationStatus;
   verificationFailures: string[];
   verificationIncomplete: string[];
