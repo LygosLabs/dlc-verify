@@ -336,7 +336,7 @@ describe('DLC Verification', () => {
       expect(result.verificationStatus).toBe('fail');
     });
 
-    it('evaluates lender terms and returns a deterministic TVC payload', async () => {
+    it('evaluates lender terms and returns a deterministic attestation payload', async () => {
       const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
         signHex: signedSample.sign,
         expectedOraclePubkey: signedSample.oraclePubkey,

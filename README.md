@@ -32,7 +32,7 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Verify oracle identity, event IDs, locktimes, and funding data
 - Confirm CET adaptor signatures are cryptographically valid
 - Verify both parties' CET adaptor signatures and refund signatures
-- Apply explicit lender/oracle/collateral/event-ID policy and return a deterministic TVC attestation payload
+- Apply explicit lender/oracle/collateral/event-ID policy and return a deterministic attestation payload
 - Run it locally or self-host it without trusting a third-party backend
 
 ---
@@ -63,11 +63,11 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Cryptographically verifies the offerer's CET adaptor signatures from the sign message
 - Verifies the offerer's refund signature against the reconstructed refund transaction
 
-### Verified-compute policy verification
+### Policy verification and attestations
 
 `verifyDlcAgainstPolicy()` and `POST /api/verify-policy` accept an optional, sparse policy. The verifier always performs every cryptographic check supported by the supplied DLC messages, then evaluates only the policy expectations the caller supplied. A borrower can provide no policy, only an expected oracle pubkey, or a complete lender policy.
 
-A complete TVC lender policy supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
+A complete lender policy supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
 
 The response keeps three concepts separate:
 
@@ -75,7 +75,7 @@ The response keeps three concepts separate:
 - `policyVerification` — `not_provided`, `pass`, or `fail`, based only on supplied expectations
 - `policyCoverage` — `not_provided`, `partial`, or `complete`
 
-The overall TVC `verdict` is `pass` only when cryptographic verification passes and a complete policy passes. A matching partial policy returns `verdict: "incomplete"` alongside `policyVerification: "pass"`; any supplied expectation mismatch returns `verdict: "fail"`.
+The overall `verdict` is `pass` only when cryptographic verification passes and a complete policy passes. A matching partial policy returns `verdict: "incomplete"` alongside `policyVerification: "pass"`; any supplied expectation mismatch returns `verdict: "fail"`.
 
 For example, an oracle-only policy is valid:
 
@@ -95,7 +95,7 @@ The result includes:
 - A pass/fail check for every expected term
 - Deterministically reconstructed funding output, refund transaction, and CET transaction IDs
 - A domain-separated transcript hash over offer/accept/sign
-- A canonical `lygos.dlc-verification.v1` attestation payload and digest for TVC to sign
+- A canonical `lygos.dlc-verification.v1` attestation payload and digest for downstream signing
 
 The loan oracle event ID is derived as:
 
@@ -103,7 +103,7 @@ The loan oracle event ID is derived as:
 eventType-SHA256(eventType//loanId//repaymentAddress//repaymentAmount)
 ```
 
-Bitcoin block inclusion and unspent-output checks intentionally remain outside this library. A TVC adapter can query its approved Bitcoin RPC and bind the result to `fundingTxId` and `fundOutputIndex` from the attestation payload.
+Bitcoin block inclusion and unspent-output checks intentionally remain outside this library. An integration adapter can query a configured Bitcoin RPC and bind the result to `fundingTxId` and `fundOutputIndex` from the attestation payload.
 
 ### CET execution (optional — escape hatch)
 
@@ -209,7 +209,7 @@ The verification steps:
 ```
 src/
 ├── verify.ts          # Main verification logic (CLI + library)
-├── policy.ts          # Fail-closed lender/TVC policy and attestation payload
+├── policy.ts          # Fail-closed lender policy and attestation payload
 ├── server.ts          # Express web server
 └── types.ts           # TypeScript interfaces
 
@@ -250,7 +250,7 @@ No backend. No wallet. No private keys. Stateless.
 - [ ] Accept hex via stdin in addition to CLI args
 - [x] DlcSign verification (contract ID match + cryptographic offerer adaptor signatures)
 - [x] Refund signature verification for DlcAccept and DlcSign
-- [x] Fail-closed policy verification and deterministic TVC attestation payload
+- [x] Fail-closed policy verification and deterministic attestation payload
 - [ ] Broader DLC shape support beyond the current enumerated focus
 - [ ] Oracle pubkey registry / known-oracle presets for hosted deployments
 - [ ] Optional hosted instance

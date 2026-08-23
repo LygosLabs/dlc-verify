@@ -33,7 +33,7 @@ export interface DlcVerificationPolicy {
 
 export type PolicyCoverage = 'not_provided' | 'partial' | 'complete';
 export type PolicyVerificationStatus = 'not_provided' | 'pass' | 'fail';
-export type TvcVerdict = 'pass' | 'fail' | 'incomplete';
+export type VerificationVerdict = 'pass' | 'fail' | 'incomplete';
 
 export interface PolicyCheck {
   id: string;
@@ -42,9 +42,9 @@ export interface PolicyCheck {
   actual: unknown;
 }
 
-export interface TvcAttestationPayload {
+export interface VerificationAttestationPayload {
   schemaVersion: 'lygos.dlc-verification.v1';
-  verdict: TvcVerdict;
+  verdict: VerificationVerdict;
   cryptographicVerification: VerificationResult['verificationStatus'];
   policyVerification: PolicyVerificationStatus;
   policyCoverage: PolicyCoverage;
@@ -63,14 +63,14 @@ export interface TvcAttestationPayload {
   cetTxids: Array<{ outcome: string; txid: string }>;
 }
 
-export interface TvcVerificationResult {
-  verdict: TvcVerdict;
+export interface DlcPolicyVerificationResult {
+  verdict: VerificationVerdict;
   cryptographicVerification: VerificationResult['verificationStatus'];
   policyVerification: PolicyVerificationStatus;
   policyCoverage: PolicyCoverage;
   checks: PolicyCheck[];
   verificationDigest: string;
-  attestationPayload: TvcAttestationPayload;
+  attestationPayload: VerificationAttestationPayload;
   verification: VerificationResult;
 }
 
@@ -143,7 +143,7 @@ function policyCoverage(policy: DlcVerificationPolicy | undefined): PolicyCovera
 export function evaluateDlcPolicy(
   verification: VerificationResult,
   policy?: DlcVerificationPolicy,
-): TvcVerificationResult {
+): DlcPolicyVerificationResult {
   const checks: PolicyCheck[] = [];
   const lenderFundingPubkey =
     policy?.lenderRole === 'offerer'
@@ -215,14 +215,14 @@ export function evaluateDlcPolicy(
   const policyVerification: PolicyVerificationStatus =
     checks.length === 0 ? 'not_provided' : checks.every((check) => check.status === 'pass') ? 'pass' : 'fail';
   const cryptographicVerification = verification.verificationStatus;
-  const verdict: TvcVerdict =
+  const verdict: VerificationVerdict =
     cryptographicVerification === 'fail' || policyVerification === 'fail'
       ? 'fail'
       : cryptographicVerification === 'pass' && coverage === 'complete' && policyVerification === 'pass'
         ? 'pass'
         : 'incomplete';
   const policyHash = coverage === 'not_provided' ? null : sha256Canonical(policy);
-  const attestationPayload: TvcAttestationPayload = {
+  const attestationPayload: VerificationAttestationPayload = {
     schemaVersion: 'lygos.dlc-verification.v1',
     verdict,
     cryptographicVerification,
@@ -260,7 +260,7 @@ export async function verifyDlcAgainstPolicy(
   acceptHex: string,
   signHex?: string,
   policy?: DlcVerificationPolicy,
-): Promise<TvcVerificationResult> {
+): Promise<DlcPolicyVerificationResult> {
   const verification = await verifyDlc(offerHex, acceptHex, {
     signHex,
     expectedOraclePubkey: policy?.expectedOraclePubkey,
