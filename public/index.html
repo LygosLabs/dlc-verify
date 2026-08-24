@@ -168,48 +168,58 @@
                                     <label for="policyLenderPayoutAddress" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected lender payout / refund address</label>
                                     <input id="policyLenderPayoutAddress" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected Bitcoin address">
                                 </div>
-                                <div>
+                                <div class="sm:col-span-2">
                                     <label for="policyTotalCollateral" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected collateral</label>
                                     <div class="relative">
                                         <input id="policyTotalCollateral" inputmode="numeric" class="w-full h-10 pl-3 pr-12 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Amount">
                                         <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-gray-400">SATS</span>
                                     </div>
                                 </div>
-                                <div>
-                                    <label for="policyEventMode" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Oracle event</label>
+                            </div>
+
+                            <details id="policyEventDetails" class="mt-5 border-t border-blue-100 pt-4 group">
+                                <summary class="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm">
+                                    <span class="flex items-center gap-2">
+                                        Oracle event ID
+                                        <span class="text-[10px] font-medium uppercase tracking-wider text-gray-400">Optional</span>
+                                    </span>
+                                    <i class="ph ph-caret-down text-gray-400 transition-transform group-open:rotate-180"></i>
+                                </summary>
+                                <div class="mt-4">
+                                    <label for="policyEventMode" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Verification method</label>
                                     <select id="policyEventMode" class="w-full h-10 px-3 border border-gray-300 rounded-card text-sm outline-none focus:border-blue-500 bg-white" onchange="togglePolicyEventInputs()">
                                         <option value="">Not checked</option>
                                         <option value="event-id">Expected event ID</option>
                                         <option value="repayment">Derive from repayment terms</option>
                                     </select>
-                                </div>
-                            </div>
 
-                            <div id="policyEventIdFields" class="hidden mt-4">
-                                <label for="policyExpectedEventId" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected event ID</label>
-                                <input id="policyExpectedEventId" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected oracle event ID">
-                            </div>
+                                    <div id="policyEventIdFields" class="hidden mt-4">
+                                        <label for="policyExpectedEventId" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected event ID</label>
+                                        <input id="policyExpectedEventId" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected oracle event ID">
+                                    </div>
 
-                            <div id="policyRepaymentFields" class="hidden mt-4 border-t border-blue-100 pt-4">
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label for="policyEventType" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Event type</label>
-                                        <input id="policyEventType" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="loan-matured">
-                                    </div>
-                                    <div>
-                                        <label for="policyLoanId" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Loan ID</label>
-                                        <input id="policyLoanId" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Loan identifier">
-                                    </div>
-                                    <div class="sm:col-span-2">
-                                        <label for="policyRepaymentAddress" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Repayment address</label>
-                                        <input id="policyRepaymentAddress" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected repayment address">
-                                    </div>
-                                    <div class="sm:col-span-2">
-                                        <label for="policyRepaymentAmount" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Repayment amount</label>
-                                        <input id="policyRepaymentAmount" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Canonical repayment amount">
+                                    <div id="policyRepaymentFields" class="hidden mt-4 border-t border-blue-100 pt-4">
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <label for="policyEventType" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Event type</label>
+                                                <input id="policyEventType" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="loan-matured">
+                                            </div>
+                                            <div>
+                                                <label for="policyLoanId" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Loan ID</label>
+                                                <input id="policyLoanId" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Loan identifier">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <label for="policyRepaymentAddress" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Repayment address</label>
+                                                <input id="policyRepaymentAddress" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected repayment address">
+                                            </div>
+                                            <div class="sm:col-span-2">
+                                                <label for="policyRepaymentAmount" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Repayment amount</label>
+                                                <input id="policyRepaymentAmount" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Canonical repayment amount">
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            </details>
 
                             <details class="mt-5 border-t border-blue-100 pt-4 group">
                                 <summary class="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm">
