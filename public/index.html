@@ -93,7 +93,7 @@
                     <div class="mb-6">
                         <div class="flex items-center justify-between mb-2">
                             <label for="oraclePubkeyInput" class="block text-sm font-medium text-gray-700">Oracle Pubkey (Optional)</label>
-                            <span class="text-[11px] text-gray-400 uppercase tracking-wider">Client-side trust check</span>
+                            <span id="oracleInputContextLabel" class="text-[11px] text-gray-400 uppercase tracking-wider">Client-side trust check</span>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
@@ -116,6 +116,122 @@
                             <option value="regtest">Regtest</option>
                         </select>
                         <p class="text-xs text-gray-500 mt-2 leading-relaxed">Controls how payout, change and funding addresses are encoded. Defaults to mainnet rather than trusting the offer's <code class="font-mono">chainHash</code> — a mismatch is flagged in the results.</p>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="flex items-center justify-between gap-4 border border-gray-200 rounded-card px-4 py-3 cursor-pointer hover:border-gray-300 transition-colors">
+                            <span class="flex items-center gap-3 min-w-0">
+                                <span class="w-8 h-8 rounded-sm bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                    <i class="ph-bold ph-shield-check text-lg"></i>
+                                </span>
+                                <span class="min-w-0">
+                                    <span class="block text-sm font-medium text-gray-900">Policy verification</span>
+                                    <span class="block text-xs text-gray-500 mt-0.5">Compare decoded terms with optional expectations</span>
+                                </span>
+                            </span>
+                            <span class="relative inline-flex shrink-0">
+                                <input id="policyToggle" type="checkbox" class="peer sr-only" role="switch" aria-controls="policyInputPanel" aria-expanded="false" onchange="togglePolicyPanel()">
+                                <span class="w-9 h-5 bg-gray-200 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2 peer-checked:bg-blue-600"></span>
+                                <span class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-4"></span>
+                            </span>
+                        </label>
+
+                        <div id="policyInputPanel" class="hidden mt-3 border border-blue-200 bg-blue-50/40 rounded-card p-4 sm:p-5">
+                            <div class="flex items-start gap-2 mb-5">
+                                <i class="ph-fill ph-info text-blue-600 mt-0.5"></i>
+                                <p class="text-xs text-gray-600 leading-relaxed">Only fields you fill in are checked. The oracle pubkey above is included when provided.</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="policyLenderRole" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Lender role</label>
+                                    <select id="policyLenderRole" class="w-full h-10 px-3 border border-gray-300 rounded-card text-sm outline-none focus:border-blue-500 bg-white">
+                                        <option value="">Not checked</option>
+                                        <option value="offerer">Offerer</option>
+                                        <option value="accepter">Accepter</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="policyNetwork" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected network</label>
+                                    <select id="policyNetwork" class="w-full h-10 px-3 border border-gray-300 rounded-card text-sm outline-none focus:border-blue-500 bg-white">
+                                        <option value="">Not checked</option>
+                                        <option value="mainnet">Mainnet</option>
+                                        <option value="testnet">Testnet</option>
+                                        <option value="regtest">Regtest</option>
+                                    </select>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label for="policyLenderFundingPubkey" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected lender funding pubkey</label>
+                                    <input id="policyLenderFundingPubkey" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Compressed funding pubkey hex">
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label for="policyLenderPayoutAddress" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected lender payout / refund address</label>
+                                    <input id="policyLenderPayoutAddress" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected Bitcoin address">
+                                </div>
+                                <div>
+                                    <label for="policyTotalCollateral" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected collateral</label>
+                                    <div class="relative">
+                                        <input id="policyTotalCollateral" inputmode="numeric" class="w-full h-10 pl-3 pr-12 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Amount">
+                                        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-gray-400">SATS</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="policyEventMode" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Oracle event</label>
+                                    <select id="policyEventMode" class="w-full h-10 px-3 border border-gray-300 rounded-card text-sm outline-none focus:border-blue-500 bg-white" onchange="togglePolicyEventInputs()">
+                                        <option value="">Not checked</option>
+                                        <option value="event-id">Expected event ID</option>
+                                        <option value="repayment">Derive from repayment terms</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div id="policyEventIdFields" class="hidden mt-4">
+                                <label for="policyExpectedEventId" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected event ID</label>
+                                <input id="policyExpectedEventId" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected oracle event ID">
+                            </div>
+
+                            <div id="policyRepaymentFields" class="hidden mt-4 border-t border-blue-100 pt-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label for="policyEventType" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Event type</label>
+                                        <input id="policyEventType" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="loan-matured">
+                                    </div>
+                                    <div>
+                                        <label for="policyLoanId" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Loan ID</label>
+                                        <input id="policyLoanId" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Loan identifier">
+                                    </div>
+                                    <div class="sm:col-span-2">
+                                        <label for="policyRepaymentAddress" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Repayment address</label>
+                                        <input id="policyRepaymentAddress" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Expected repayment address">
+                                    </div>
+                                    <div class="sm:col-span-2">
+                                        <label for="policyRepaymentAmount" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Repayment amount</label>
+                                        <input id="policyRepaymentAmount" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Canonical repayment amount">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <details class="mt-5 border-t border-blue-100 pt-4 group">
+                                <summary class="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm">
+                                    Additional checks
+                                    <i class="ph ph-caret-down text-gray-400 transition-transform group-open:rotate-180"></i>
+                                </summary>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                                    <div>
+                                        <label for="policyCetLocktime" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected CET locktime</label>
+                                        <input id="policyCetLocktime" inputmode="numeric" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Block height or timestamp">
+                                    </div>
+                                    <div>
+                                        <label for="policyRefundLocktime" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected refund locktime</label>
+                                        <input id="policyRefundLocktime" inputmode="numeric" class="w-full h-10 px-3 border border-gray-300 rounded-card font-mono text-xs outline-none focus:border-blue-500 bg-white" placeholder="Block height or timestamp">
+                                    </div>
+                                    <div class="sm:col-span-2">
+                                        <label for="policyLenderOutcomes" class="block text-xs font-medium text-gray-600 uppercase tracking-wider mb-1">Expected lender outcomes <span class="normal-case tracking-normal text-gray-400">(JSON)</span></label>
+                                        <textarea id="policyLenderOutcomes" class="w-full min-h-[72px] p-3 border border-gray-300 rounded-card font-mono text-xs resize-y outline-none focus:border-blue-500 bg-white" placeholder='[{"outcome":"repaid","lenderPayoutSats":"8000"}]'></textarea>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
                     </div>
 
                     <div class="flex justify-end">
@@ -161,6 +277,52 @@
                             <i class="ph-fill ph-check-circle text-green-600 text-lg"></i>
                             Valid Cryptography
                         </div>
+                    </div>
+                </div>
+
+                <!-- Policy Verification -->
+                <div id="policyResultsCard" class="hidden bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">Policy Verification</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Only supplied expectations were evaluated</p>
+                        </div>
+                        <div id="policyStatusBadge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-card text-xs font-medium"></div>
+                    </div>
+                    <div class="p-6">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                            <div class="bg-gray-50 border border-gray-100 rounded-card p-3">
+                                <div class="text-[10px] text-gray-500 uppercase tracking-wider">Coverage</div>
+                                <div id="policyCoverageDisplay" class="text-sm font-medium text-gray-900 mt-1">-</div>
+                            </div>
+                            <div class="bg-gray-50 border border-gray-100 rounded-card p-3">
+                                <div class="text-[10px] text-gray-500 uppercase tracking-wider">Cryptography</div>
+                                <div id="policyCryptoDisplay" class="text-sm font-medium text-gray-900 mt-1">-</div>
+                            </div>
+                            <div class="bg-gray-50 border border-gray-100 rounded-card p-3">
+                                <div class="text-[10px] text-gray-500 uppercase tracking-wider">Overall verdict</div>
+                                <div id="policyVerdictDisplay" class="text-sm font-medium text-gray-900 mt-1">-</div>
+                            </div>
+                        </div>
+
+                        <div id="policyChecksList" class="space-y-2"></div>
+                        <p id="policyNoChecks" class="hidden text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-card p-3">No policy expectations were supplied.</p>
+
+                        <div class="border-t border-gray-100 mt-5 pt-5">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Verification digest</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="verificationDigestDisplay" class="copy-text font-mono text-xs text-gray-700 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+
+                        <details class="mt-4 border-t border-gray-100 pt-4 group">
+                            <summary class="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm">
+                                Attestation payload
+                                <i class="ph ph-caret-down text-gray-400 transition-transform group-open:rotate-180"></i>
+                            </summary>
+                            <pre id="attestationPayloadDisplay" class="mt-3 max-h-72 overflow-auto bg-gray-950 text-gray-100 rounded-card p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all"></pre>
+                        </details>
                     </div>
                 </div>
 
@@ -320,7 +482,7 @@
                                     <i id="adaptorSigIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
                                 </div>
                                 <div>
-                                    <h4 class="text-sm font-medium text-gray-900">CET Adaptor Signatures</h4>
+                                    <h4 class="text-sm font-medium text-gray-900">Accepter Signatures</h4>
                                     <p id="adaptorSigDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
                                 </div>
                             </li>
@@ -340,7 +502,7 @@
                                     <i id="signAdaptorIcon" class="ph-bold ph-minus text-gray-400 text-xs"></i>
                                 </div>
                                 <div>
-                                    <h4 class="text-sm font-medium text-gray-900">Sign Adaptor Signatures</h4>
+                                    <h4 class="text-sm font-medium text-gray-900">Offerer Signatures</h4>
                                     <p id="signAdaptorDetail" class="text-xs text-gray-500 mt-1 leading-relaxed">-</p>
                                 </div>
                             </li>
@@ -644,6 +806,190 @@
             if (trigger) trigger.setAttribute('data-copy', value || '');
         }
 
+        function togglePolicyPanel() {
+            const toggle = document.getElementById('policyToggle');
+            const panel = document.getElementById('policyInputPanel');
+            const oracleContextLabel = document.getElementById('oracleInputContextLabel');
+            panel.classList.toggle('hidden', !toggle.checked);
+            toggle.setAttribute('aria-expanded', String(toggle.checked));
+            oracleContextLabel.textContent = toggle.checked ? 'Included when provided' : 'Client-side trust check';
+        }
+
+        function togglePolicyEventInputs() {
+            const mode = document.getElementById('policyEventMode').value;
+            document.getElementById('policyEventIdFields').classList.toggle('hidden', mode !== 'event-id');
+            document.getElementById('policyRepaymentFields').classList.toggle('hidden', mode !== 'repayment');
+        }
+
+        function inputValue(id) {
+            return document.getElementById(id).value.trim();
+        }
+
+        function optionalUnsignedInteger(id, label) {
+            const value = inputValue(id);
+            if (!value) return undefined;
+            if (!/^\d+$/.test(value)) throw new Error(`${label} must be a non-negative integer`);
+            const parsed = Number(value);
+            if (!Number.isSafeInteger(parsed)) throw new Error(`${label} is too large`);
+            return parsed;
+        }
+
+        function buildPolicy(oracleContext) {
+            const policy = {};
+            const lenderRole = inputValue('policyLenderRole');
+            const expectedNetwork = inputValue('policyNetwork');
+            const lenderFundingPubkey = inputValue('policyLenderFundingPubkey');
+            const lenderPayoutAddress = inputValue('policyLenderPayoutAddress');
+            const totalCollateral = inputValue('policyTotalCollateral');
+            const eventMode = inputValue('policyEventMode');
+            const cetLocktime = optionalUnsignedInteger('policyCetLocktime', 'Expected CET locktime');
+            const refundLocktime = optionalUnsignedInteger('policyRefundLocktime', 'Expected refund locktime');
+            const lenderOutcomesText = inputValue('policyLenderOutcomes');
+
+            if (lenderRole) policy.lenderRole = lenderRole;
+            if (expectedNetwork) policy.network = expectedNetwork;
+            if (oracleContext.expectedPubkey) policy.expectedOraclePubkey = oracleContext.expectedPubkey;
+
+            if (lenderFundingPubkey) {
+                const normalized = lenderFundingPubkey.toLowerCase().replace(/^0x/, '').replace(/\s+/g, '');
+                if (!/^[0-9a-f]{66}$/.test(normalized)) {
+                    throw new Error('Expected lender funding pubkey must be a 33-byte compressed pubkey (66 hex chars)');
+                }
+                policy.expectedLenderFundingPubkey = normalized;
+            }
+            if (lenderPayoutAddress) policy.expectedLenderPayoutAddress = lenderPayoutAddress;
+            if (totalCollateral) {
+                if (!/^\d+$/.test(totalCollateral)) throw new Error('Expected collateral must be a non-negative satoshi amount');
+                policy.expectedTotalCollateralSats = totalCollateral;
+            }
+
+            if ((lenderFundingPubkey || lenderPayoutAddress || lenderOutcomesText) && !lenderRole) {
+                throw new Error('Select whether the lender is the offerer or accepter for lender-specific checks');
+            }
+
+            if (eventMode === 'event-id') {
+                const expectedEventId = inputValue('policyExpectedEventId');
+                if (!expectedEventId) throw new Error('Enter the expected oracle event ID');
+                policy.oracleEvent = { expectedEventId };
+            } else if (eventMode === 'repayment') {
+                const eventIdPreimage = {
+                    eventType: inputValue('policyEventType'),
+                    loanId: inputValue('policyLoanId'),
+                    repaymentAddress: inputValue('policyRepaymentAddress'),
+                    repaymentAmount: inputValue('policyRepaymentAmount'),
+                };
+                if (Object.values(eventIdPreimage).some((value) => !value)) {
+                    throw new Error('Event type, loan ID, repayment address, and repayment amount are all required to derive the event ID');
+                }
+                policy.oracleEvent = { eventIdPreimage };
+            }
+
+            if (cetLocktime !== undefined) policy.expectedCetLocktime = cetLocktime;
+            if (refundLocktime !== undefined) policy.expectedRefundLocktime = refundLocktime;
+
+            if (lenderOutcomesText) {
+                let lenderOutcomes;
+                try {
+                    lenderOutcomes = JSON.parse(lenderOutcomesText);
+                } catch (_err) {
+                    throw new Error('Expected lender outcomes must be valid JSON');
+                }
+                if (!Array.isArray(lenderOutcomes) || lenderOutcomes.some((item) =>
+                    !item || typeof item.outcome !== 'string' || typeof item.lenderPayoutSats !== 'string' || !/^\d+$/.test(item.lenderPayoutSats))) {
+                    throw new Error('Expected lender outcomes must be an array with outcome and decimal-string lenderPayoutSats fields');
+                }
+                policy.expectedLenderOutcomes = lenderOutcomes.map((item) => ({
+                    outcome: item.outcome,
+                    lenderPayoutSats: item.lenderPayoutSats,
+                }));
+            }
+
+            return policy;
+        }
+
+        function humanizeStatus(value) {
+            if (!value) return '-';
+            return String(value).replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+        }
+
+        function formatPolicyValue(value) {
+            if (value === null) return 'null';
+            if (typeof value === 'object') return JSON.stringify(value);
+            return String(value);
+        }
+
+        function renderPolicyResults(policyResult) {
+            const card = document.getElementById('policyResultsCard');
+            if (!policyResult) {
+                card.classList.add('hidden');
+                return;
+            }
+
+            card.classList.remove('hidden');
+            document.getElementById('policyCoverageDisplay').textContent = humanizeStatus(policyResult.policyCoverage);
+            document.getElementById('policyCryptoDisplay').textContent = humanizeStatus(policyResult.cryptographicVerification);
+            document.getElementById('policyVerdictDisplay').textContent = humanizeStatus(policyResult.verdict);
+
+            const badge = document.getElementById('policyStatusBadge');
+            if (policyResult.policyVerification === 'fail') {
+                badge.className = 'inline-flex items-center gap-1.5 bg-red-50 text-red-700 px-3 py-1 rounded-card text-xs font-medium';
+                badge.innerHTML = '<i class="ph-bold ph-x"></i> Policy mismatch';
+            } else if (policyResult.policyVerification === 'pass' && policyResult.policyCoverage === 'complete') {
+                badge.className = 'inline-flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-card text-xs font-medium';
+                badge.innerHTML = '<i class="ph-bold ph-check"></i> Policy verified';
+            } else if (policyResult.policyVerification === 'pass') {
+                badge.className = 'inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-card text-xs font-medium';
+                badge.innerHTML = '<i class="ph-bold ph-check"></i> Supplied checks passed';
+            } else {
+                badge.className = 'inline-flex items-center gap-1.5 bg-gray-100 text-gray-600 px-3 py-1 rounded-card text-xs font-medium';
+                badge.innerHTML = '<i class="ph-bold ph-minus"></i> No expectations';
+            }
+
+            const labels = {
+                'network': 'Network',
+                'oracle-pubkey': 'Oracle pubkey',
+                'lender-funding-pubkey': 'Lender funding pubkey',
+                'lender-payout-address': 'Lender payout address',
+                'refund-pays-lender-address': 'Refund pays lender address',
+                'total-collateral-sats': 'Total collateral',
+                'oracle-event-id': 'Oracle event ID',
+                'cet-locktime': 'CET locktime',
+                'refund-locktime': 'Refund locktime',
+            };
+            const checks = policyResult.checks || [];
+            const list = document.getElementById('policyChecksList');
+            const empty = document.getElementById('policyNoChecks');
+            list.innerHTML = '';
+            empty.classList.toggle('hidden', checks.length > 0);
+
+            for (const check of checks) {
+                const passed = check.status === 'pass';
+                const label = labels[check.id] || (check.id.startsWith('lender-outcome:')
+                    ? `Lender payout: ${check.id.slice('lender-outcome:'.length)}`
+                    : humanizeStatus(check.id));
+                const row = document.createElement('div');
+                row.className = `border rounded-card p-3 ${passed ? 'border-green-200 bg-green-50/50' : 'border-red-200 bg-red-50/50'}`;
+                row.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <span class="w-5 h-5 rounded-full ${passed ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'} flex items-center justify-center shrink-0 mt-0.5">
+                            <i class="ph-bold ${passed ? 'ph-check' : 'ph-x'} text-[11px]"></i>
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <div class="text-sm font-medium text-gray-900">${escapeHtml(label)}</div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs">
+                                <div class="min-w-0"><span class="text-gray-500">Expected</span><div class="font-mono text-gray-700 break-all">${escapeHtml(formatPolicyValue(check.expected))}</div></div>
+                                <div class="min-w-0"><span class="text-gray-500">Decoded</span><div class="font-mono text-gray-700 break-all">${escapeHtml(formatPolicyValue(check.actual))}</div></div>
+                            </div>
+                        </div>
+                    </div>`;
+                list.appendChild(row);
+            }
+
+            document.getElementById('verificationDigestDisplay').textContent = policyResult.verificationDigest || '-';
+            setCopyData('verificationDigestDisplay', policyResult.verificationDigest || '');
+            document.getElementById('attestationPayloadDisplay').textContent = JSON.stringify(policyResult.attestationPayload, null, 2);
+        }
+
         async function doVerify() {
             const offerHex = document.getElementById('offerHex').value.trim();
             const acceptHex = document.getElementById('acceptHex').value.trim();
@@ -651,8 +997,11 @@
             if (!offerHex || !acceptHex) { alert('Please provide both offer and accept hex'); return; }
 
             let oracleContext;
+            let policy = null;
+            const policyEnabled = document.getElementById('policyToggle').checked;
             try {
                 oracleContext = getOracleSelectionContext();
+                if (policyEnabled) policy = buildPolicy(oracleContext);
             } catch (err) {
                 alert(err.message);
                 return;
@@ -665,19 +1014,25 @@
                 const payload = {
                     offer: offerHex,
                     accept: acceptHex,
-                    expectedOraclePubkey: oracleContext.expectedPubkey,
                     network: document.getElementById('networkSelect').value,
                 };
                 if (signHex) {
                     payload.signHex = signHex;
                 }
-                const response = await fetch('/api/verify', {
+                if (policyEnabled) {
+                    payload.policy = policy;
+                } else {
+                    payload.expectedOraclePubkey = oracleContext.expectedPubkey;
+                }
+                const response = await fetch(policyEnabled ? '/api/verify-policy' : '/api/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const result = await response.json();
-                displayResults(result, oracleContext);
+                const responseBody = await response.json();
+                if (!response.ok) throw new Error(responseBody.error || `Verification failed (${response.status})`);
+                const verification = policyEnabled ? responseBody.verification : responseBody;
+                displayResults(verification, oracleContext, policyEnabled ? responseBody : null);
             } catch (err) {
                 document.getElementById('errorMessage').textContent = `Error: ${err.message}`;
                 document.getElementById('errorMessage').classList.remove('hidden');
@@ -690,7 +1045,7 @@
             }
         }
 
-        function displayResults(result, oracleContext = { expectedPubkey: null, expectedLabel: 'provided oracle pubkey' }) {
+        function displayResults(result, oracleContext = { expectedPubkey: null, expectedLabel: 'provided oracle pubkey' }, policyResult = null) {
             document.getElementById('inputSection').classList.add('hidden');
             document.getElementById('resultsSection').classList.remove('hidden');
             document.getElementById('headerEditBtn').classList.remove('hidden');
@@ -705,20 +1060,24 @@
 
             // Contract type & validity
             document.getElementById('contractTypeDisplay').textContent = result.contractType || 'Unknown';
-            const cryptoValid = result.oracleSigValid && (result.adaptorValid === true);
             const oracleTrustState = result.error ? null : getOracleTrustState(result, oracleContext);
             const hasPubkeyMismatch = oracleContext.expectedPubkey && oracleTrustState && !oracleTrustState.proofValid;
             const badge = document.getElementById('validityBadge');
-            if (cryptoValid && !hasPubkeyMismatch) {
+            const overallStatus = policyResult ? policyResult.verdict : result.verificationStatus;
+            if (overallStatus === 'pass' && !hasPubkeyMismatch) {
                 badge.className = 'inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
-                badge.innerHTML = '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i> Valid Cryptography';
-            } else if (cryptoValid && hasPubkeyMismatch) {
+                badge.innerHTML = '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i> Verified';
+            } else if (overallStatus === 'incomplete' || hasPubkeyMismatch) {
                 badge.className = 'inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
-                badge.innerHTML = '<i class="ph-fill ph-warning-circle text-amber-600 text-lg"></i> Oracle Pubkey Mismatch';
+                badge.innerHTML = hasPubkeyMismatch
+                    ? '<i class="ph-fill ph-warning-circle text-amber-600 text-lg"></i> Oracle Pubkey Mismatch'
+                    : '<i class="ph-fill ph-warning-circle text-amber-600 text-lg"></i> Partial Verification';
             } else {
                 badge.className = 'inline-flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
-                badge.innerHTML = '<i class="ph-fill ph-x-circle text-red-600 text-lg"></i> Invalid';
+                badge.innerHTML = '<i class="ph-fill ph-x-circle text-red-600 text-lg"></i> Verification Failed';
             }
+
+            renderPolicyResults(policyResult);
 
             // Collateral
             document.getElementById('totalCollateralDisplay').textContent = result.totalCollateral ? formatSats(result.totalCollateral) : '-';
@@ -831,10 +1190,15 @@
                 oraclePubkeyProofStep.classList.add('hidden');
             }
 
-            if (result.adaptorValid === true) {
-                setProofStep('adaptorSig', true, `Verified all ${result.adaptorTotalCount} outcome signatures.`);
-            } else if (result.adaptorValid === false) {
-                setProofStep('adaptorSig', false, result.adaptorError || 'Verification failed');
+            const accepterSignaturesValid = result.adaptorValid === false || result.refundSigValid === false
+                ? false
+                : result.adaptorValid === true && result.refundSigValid === true
+                    ? true
+                    : null;
+            if (accepterSignaturesValid === true) {
+                setProofStep('adaptorSig', true, `Verified ${result.adaptorTotalCount} CET adaptor signatures and the refund signature.`);
+            } else if (accepterSignaturesValid === false) {
+                setProofStep('adaptorSig', false, result.adaptorError || result.refundSigError || 'Signature verification failed');
             } else {
                 setProofStep('adaptorSig', null, result.adaptorSigVerificationNote || 'Not available');
             }
@@ -842,7 +1206,8 @@
             // Sign message verification steps
             const contractIdMatchStep = document.getElementById('contractIdMatchProofStep');
             const signAdaptorStep = document.getElementById('signAdaptorProofStep');
-            if (result.signAvailable) {
+            const signWasSupplied = result.signAvailable || result.signAdaptorError || result.signRefundSigError;
+            if (signWasSupplied) {
                 contractIdMatchStep.classList.remove('hidden');
                 signAdaptorStep.classList.remove('hidden');
 
@@ -854,10 +1219,15 @@
                     setProofStep('contractIdMatch', null, 'Could not verify.');
                 }
 
-                if (result.signAdaptorValid === true) {
-                    setProofStep('signAdaptor', true, `Verified all ${result.signAdaptorTotalCount} offerer adaptor signatures.`);
-                } else if (result.signAdaptorValid === false) {
-                    setProofStep('signAdaptor', false, result.signAdaptorError || 'Verification failed');
+                const offererSignaturesValid = result.signAdaptorValid === false || result.signRefundSigValid === false
+                    ? false
+                    : result.signAdaptorValid === true && result.signRefundSigValid === true
+                        ? true
+                        : null;
+                if (offererSignaturesValid === true) {
+                    setProofStep('signAdaptor', true, `Verified ${result.signAdaptorTotalCount} CET adaptor signatures and the refund signature.`);
+                } else if (offererSignaturesValid === false) {
+                    setProofStep('signAdaptor', false, result.signAdaptorError || result.signRefundSigError || 'Signature verification failed');
                 } else {
                     setProofStep('signAdaptor', null, 'Not verified');
                 }
@@ -940,6 +1310,8 @@
         // Init copy triggers on page load
         document.addEventListener('DOMContentLoaded', () => {
             populateOraclePresetOptions();
+            togglePolicyPanel();
+            togglePolicyEventInputs();
             const oracleInput = document.getElementById('oraclePubkeyInput');
             if (oracleInput) {
                 oracleInput.addEventListener('input', syncOraclePresetFromInput);

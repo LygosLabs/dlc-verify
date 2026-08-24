@@ -376,14 +376,22 @@ describe('DLC Verification', () => {
     });
 
     it('supports an oracle-pubkey-only partial policy', async () => {
-      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
-        expectedOraclePubkey: signedSample.oraclePubkey,
-      });
+      const result = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          expectedOraclePubkey: signedSample.oraclePubkey,
+        },
+        'regtest',
+      );
 
       expect(result.verdict).toBe('incomplete');
       expect(result.cryptographicVerification).toBe('pass');
       expect(result.policyVerification).toBe('pass');
       expect(result.policyCoverage).toBe('partial');
+      expect(result.verification.network).toBe('regtest');
+      expect(result.checks.some((check) => check.id === 'network')).toBe(false);
       expect(result.checks).toEqual([
         expect.objectContaining({ id: 'oracle-pubkey', status: 'pass' }),
       ]);

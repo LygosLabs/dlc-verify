@@ -62,20 +62,21 @@ interface PolicyVerifyRequestBody {
   offer?: string;
   accept?: string;
   signHex?: string;
+  network?: string;
   policy?: DlcVerificationPolicy;
 }
 
 app.post(
   '/api/verify-policy',
   async (req: Request<object, object, PolicyVerifyRequestBody>, res: Response): Promise<void> => {
-    const { offer, accept, signHex, policy } = req.body;
+    const { offer, accept, signHex, network, policy } = req.body;
     if (!offer || !accept) {
       res.status(400).json({ error: 'Missing required fields: offer, accept' });
       return;
     }
 
     try {
-      res.json(await verifyDlcAgainstPolicy(offer, accept, signHex, policy));
+      res.json(await verifyDlcAgainstPolicy(offer, accept, signHex, policy, network));
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }

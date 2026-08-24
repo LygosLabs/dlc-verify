@@ -260,11 +260,12 @@ export async function verifyDlcAgainstPolicy(
   acceptHex: string,
   signHex?: string,
   policy?: DlcVerificationPolicy,
+  network?: string,
 ): Promise<DlcPolicyVerificationResult> {
   const verification = await verifyDlc(offerHex, acceptHex, {
     signHex,
     expectedOraclePubkey: policy?.expectedOraclePubkey,
-    network: policy?.network,
+    network: network ?? policy?.network,
   });
   return evaluateDlcPolicy(verification, policy);
 }

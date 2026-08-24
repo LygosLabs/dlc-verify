@@ -67,6 +67,8 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 
 `verifyDlcAgainstPolicy()` and `POST /api/verify-policy` accept an optional, sparse policy. The verifier always performs every cryptographic check supported by the supplied DLC messages, then evaluates only the policy expectations the caller supplied. A borrower can provide no policy, only an expected oracle pubkey, or a complete lender policy.
 
+The browser UI exposes the same flow behind a collapsed **Policy verification** toggle. With the toggle off, the standard form and results stay unchanged; when enabled, only supplied policy fields are evaluated and the policy checks, coverage, verdict, digest, and attestation payload are shown.
+
 A complete lender policy supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
 
 The response keeps three concepts separate:
