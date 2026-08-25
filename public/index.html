@@ -1073,10 +1073,21 @@
             const oracleTrustState = result.error ? null : getOracleTrustState(result, oracleContext);
             const hasPubkeyMismatch = oracleContext.expectedPubkey && oracleTrustState && !oracleTrustState.proofValid;
             const badge = document.getElementById('validityBadge');
-            const overallStatus = policyResult ? policyResult.verdict : result.verificationStatus;
+            const standardVerificationPassedWithoutSign = !policyResult
+                && result.verificationStatus === 'incomplete'
+                && Array.isArray(result.verificationIncomplete)
+                && result.verificationIncomplete.length === 1
+                && result.verificationIncomplete[0] === 'dlc-sign-not-provided';
+            const overallStatus = policyResult
+                ? policyResult.verdict
+                : standardVerificationPassedWithoutSign
+                    ? 'pass'
+                    : result.verificationStatus;
             if (overallStatus === 'pass' && !hasPubkeyMismatch) {
                 badge.className = 'inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
-                badge.innerHTML = '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i> Verified';
+                badge.innerHTML = policyResult
+                    ? '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i> Verified'
+                    : '<i class="ph-fill ph-check-circle text-green-600 text-lg"></i> Valid Cryptography';
             } else if (overallStatus === 'incomplete' || hasPubkeyMismatch) {
                 badge.className = 'inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-card text-sm font-medium whitespace-nowrap self-start';
                 badge.innerHTML = hasPubkeyMismatch
