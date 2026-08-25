@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
-import { deriveLygosOracleEventId, verifyDlcAgainstPolicy } from '../src/policy';
+import { deriveLygosOracleEventId, type DlcVerificationPolicy, verifyDlcAgainstPolicy } from '../src/policy';
 import { verifyDlc } from '../src/verify';
 import {
   loadSampleData,
@@ -420,6 +420,37 @@ describe('DLC Verification', () => {
       expect(result.checks).toEqual([
         expect.objectContaining({ id: 'oracle-pubkey', status: 'fail' }),
       ]);
+    });
+
+    it('checks policy network against the resolved address network, not the offer chain hash', async () => {
+      const result = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        { network: 'mainnet' },
+        'mainnet',
+      );
+
+      expect(result.verification.network).toBe('mainnet');
+      expect(result.verification.chainHashNetwork).toBe('regtest');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.checks).toEqual([expect.objectContaining({ id: 'network', status: 'pass' })]);
+    });
+
+    it('returns a policy failure for a malformed oracle event instead of throwing', async () => {
+      const malformedPolicy = { oracleEvent: {} } as unknown as DlcVerificationPolicy;
+      const result = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        malformedPolicy,
+        'regtest',
+      );
+
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('fail');
+      expect(result.verdict).toBe('fail');
+      expect(result.checks).toEqual([expect.objectContaining({ id: 'oracle-event-id', status: 'fail' })]);
     });
   });
 

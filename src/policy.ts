@@ -107,9 +107,31 @@ export function deriveLygosOracleEventId(input: OracleEventPreimage): string {
   return `${eventType}-${hash}`;
 }
 
-function expectedEventId(expectation: OracleEventExpectation): string {
-  if ('expectedEventId' in expectation) return expectation.expectedEventId.trim();
-  return deriveLygosOracleEventId(expectation.eventIdPreimage);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function expectedEventId(expectation: unknown): string | null {
+  if (!isRecord(expectation)) return null;
+  if (isNonEmptyString(expectation.expectedEventId)) return expectation.expectedEventId.trim();
+
+  const preimage = expectation.eventIdPreimage;
+  if (!isRecord(preimage)) return null;
+  const { eventType, loanId, repaymentAddress, repaymentAmount } = preimage;
+  if (
+    !isNonEmptyString(eventType) ||
+    !isNonEmptyString(loanId) ||
+    !isNonEmptyString(repaymentAddress) ||
+    !isNonEmptyString(repaymentAmount)
+  ) {
+    return null;
+  }
+
+  return deriveLygosOracleEventId({ eventType, loanId, repaymentAddress, repaymentAmount });
 }
 
 function addCheck(checks: PolicyCheck[], id: string, expected: unknown, actual: unknown): void {
@@ -159,7 +181,7 @@ export function evaluateDlcPolicy(
         : null;
 
   if (policy?.network !== undefined) {
-    addCheck(checks, 'network', policy.network, verification.chainHashNetwork);
+    addCheck(checks, 'network', policy.network, verification.network);
   }
   if (policy?.expectedOraclePubkey !== undefined) {
     addCheck(
@@ -190,7 +212,17 @@ export function evaluateDlcPolicy(
     addCheck(checks, 'total-collateral-sats', policy.expectedTotalCollateralSats, verification.totalCollateral);
   }
   if (policy?.oracleEvent !== undefined) {
-    addCheck(checks, 'oracle-event-id', expectedEventId(policy.oracleEvent), verification.oracleEventId);
+    const expected = expectedEventId(policy.oracleEvent);
+    if (expected === null) {
+      checks.push({
+        id: 'oracle-event-id',
+        status: 'fail',
+        expected: 'a non-empty expectedEventId or complete eventIdPreimage',
+        actual: policy.oracleEvent,
+      });
+    } else {
+      addCheck(checks, 'oracle-event-id', expected, verification.oracleEventId);
+    }
   }
   if (policy?.expectedCetLocktime !== undefined) {
     addCheck(checks, 'cet-locktime', policy.expectedCetLocktime, verification.cetLocktime);
