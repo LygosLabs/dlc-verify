@@ -122,6 +122,9 @@ function finalizeVerificationStatus(result: VerificationResult, signRequested: b
   const incomplete: string[] = [];
 
   if (result.error) failures.push('message-parsing-or-reconstruction-failed');
+  if (result.expectedOraclePubkey !== null && result.oraclePubkeyMatchesExpected !== true) {
+    failures.push('oracle-pubkey-mismatch-or-unavailable');
+  }
   if (!result.oracleSigValid) failures.push('oracle-announcement-signature-invalid');
   if (!result.adaptorSigVerificationAvailable) failures.push('accepter-adaptor-verification-unavailable');
   else if (result.adaptorValid !== true) failures.push('accepter-adaptor-signatures-invalid');
@@ -279,6 +282,10 @@ export async function verifyDlc(
     const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
     const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
     log('parsed offer & accept successfully');
+
+    if (!offer.temporaryContractId.equals(accept.temporaryContractId)) {
+      throw new Error('Offer and Accept temporary contract IDs do not match');
+    }
 
     const contract = extractContractInfo(offer.contractInfo);
     const descriptor = contract.descriptor;

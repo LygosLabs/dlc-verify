@@ -12,6 +12,7 @@ import {
   modifyCetLocktime,
   modifyOfferCollateral,
   modifyAcceptCollateral,
+  modifyAcceptTemporaryContractId,
   modifyOfferFundingPubkey,
   modifyAcceptFundingPubkey,
   getOraclePubkey,
@@ -177,6 +178,8 @@ describe('DLC Verification', () => {
       expect(result.oraclePubkeySource).toBe('provided');
       expect(result.expectedOraclePubkey).toBe(wrongPubkey);
       expect(result.extractedOraclePubkey).not.toBe(wrongPubkey);
+      expect(result.verificationStatus).toBe('fail');
+      expect(result.verificationFailures).toContain('oracle-pubkey-mismatch-or-unavailable');
     });
 
     it('should handle oracle pubkey with 0x prefix', async () => {
@@ -336,6 +339,19 @@ describe('DLC Verification', () => {
       expect(result.verificationStatus).toBe('fail');
     });
 
+    it('fails when Offer and Accept temporary contract IDs do not match', async () => {
+      const mismatchedAccept = modifyAcceptTemporaryContractId(signedSample.accept, Buffer.alloc(32, 0x42));
+      const result = await verifyDlc(signedSample.offer, mismatchedAccept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.verificationStatus).toBe('fail');
+      expect(result.error).toContain('temporary contract IDs do not match');
+      expect(result.verificationFailures).toContain('message-parsing-or-reconstruction-failed');
+    });
+
     it('evaluates lender terms and returns a deterministic attestation payload', async () => {
       const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
         signHex: signedSample.sign,
@@ -352,7 +368,10 @@ describe('DLC Verification', () => {
         oracleEvent: { expectedEventId: baseline.oracleEventId! },
         expectedCetLocktime: baseline.cetLocktime!,
         expectedRefundLocktime: baseline.refundLocktime!,
-        expectedLenderOutcomes: [{ outcome: 'repaid', lenderPayoutSats: '8000' }],
+        expectedLenderOutcomes: baseline.outcomes.map((outcome) => ({
+          outcome: outcome.label,
+          lenderPayoutSats: outcome.offererSats,
+        })),
       });
 
       expect(result.verdict).toBe('pass');
@@ -408,13 +427,13 @@ describe('DLC Verification', () => {
       expect(result.policyCoverage).toBe('partial');
     });
 
-    it('fails only the supplied partial policy when the oracle pubkey mismatches', async () => {
+    it('fails cryptographic verification and the supplied policy when the oracle pubkey mismatches', async () => {
       const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
         expectedOraclePubkey: generateRandomXOnlyPubkey(),
       });
 
       expect(result.verdict).toBe('fail');
-      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.cryptographicVerification).toBe('fail');
       expect(result.policyVerification).toBe('fail');
       expect(result.policyCoverage).toBe('partial');
       expect(result.checks).toEqual([
@@ -422,7 +441,7 @@ describe('DLC Verification', () => {
       ]);
     });
 
-    it('checks policy network against the resolved address network, not the offer chain hash', async () => {
+    it('checks policy network against the offer chain hash, not the caller-selected address network', async () => {
       const result = await verifyDlcAgainstPolicy(
         signedSample.offer,
         signedSample.accept,
@@ -433,8 +452,93 @@ describe('DLC Verification', () => {
 
       expect(result.verification.network).toBe('mainnet');
       expect(result.verification.chainHashNetwork).toBe('regtest');
-      expect(result.policyVerification).toBe('pass');
-      expect(result.checks).toEqual([expect.objectContaining({ id: 'network', status: 'pass' })]);
+      expect(result.policyVerification).toBe('fail');
+      expect(result.verdict).toBe('fail');
+      expect(result.checks).toEqual([
+        expect.objectContaining({ id: 'network', status: 'fail', expected: 'mainnet', actual: 'regtest' }),
+      ]);
+    });
+
+    it('requires locktimes and exact lender outcome coverage for a complete policy', async () => {
+      const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+      const commonPolicy = {
+        lenderRole: 'offerer' as const,
+        network: 'regtest' as const,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        expectedLenderFundingPubkey: baseline.offererFundingPubkey!,
+        expectedLenderPayoutAddress: baseline.offererPayoutAddress!,
+        expectedTotalCollateralSats: baseline.totalCollateral!,
+        oracleEvent: { expectedEventId: baseline.oracleEventId! },
+      };
+
+      const missingLocktimes = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          ...commonPolicy,
+          expectedLenderOutcomes: baseline.outcomes.map((outcome) => ({
+            outcome: outcome.label,
+            lenderPayoutSats: outcome.offererSats,
+          })),
+        },
+      );
+      expect(missingLocktimes.policyCoverage).toBe('partial');
+      expect(missingLocktimes.verdict).toBe('incomplete');
+
+      const missingOutcomes = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          ...commonPolicy,
+          expectedCetLocktime: baseline.cetLocktime!,
+          expectedRefundLocktime: baseline.refundLocktime!,
+        },
+      );
+      expect(missingOutcomes.policyCoverage).toBe('partial');
+      expect(missingOutcomes.verdict).toBe('incomplete');
+
+      const subsetOutcomes = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          ...commonPolicy,
+          expectedCetLocktime: baseline.cetLocktime!,
+          expectedRefundLocktime: baseline.refundLocktime!,
+          expectedLenderOutcomes: [
+            { outcome: baseline.outcomes[0].label, lenderPayoutSats: baseline.outcomes[0].offererSats },
+          ],
+        },
+      );
+      expect(subsetOutcomes.policyCoverage).toBe('complete');
+      expect(subsetOutcomes.policyVerification).toBe('fail');
+      expect(subsetOutcomes.checks).toContainEqual(expect.objectContaining({ id: 'lender-outcome-set', status: 'fail' }));
+    });
+
+    it('rejects duplicate expected lender outcomes', async () => {
+      const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+      const firstOutcome = baseline.outcomes[0];
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        expectedLenderOutcomes: [
+          { outcome: firstOutcome.label, lenderPayoutSats: firstOutcome.offererSats },
+          { outcome: firstOutcome.label, lenderPayoutSats: firstOutcome.offererSats },
+        ],
+      });
+
+      expect(result.policyVerification).toBe('fail');
+      expect(result.checks).toContainEqual(
+        expect.objectContaining({ id: 'lender-outcomes-unique', status: 'fail' }),
+      );
     });
 
     it('returns a policy failure for a malformed oracle event instead of throwing', async () => {

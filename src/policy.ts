@@ -151,9 +151,13 @@ const COMPLETE_POLICY_FIELDS: Array<keyof DlcVerificationPolicy> = [
   'expectedLenderPayoutAddress',
   'expectedTotalCollateralSats',
   'oracleEvent',
+  'expectedCetLocktime',
+  'expectedRefundLocktime',
+  'expectedLenderOutcomes',
 ];
 
 function hasValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
   return value !== undefined && value !== null && value !== '';
 }
 
@@ -181,7 +185,7 @@ export function evaluateDlcPolicy(
         : null;
 
   if (policy?.network !== undefined) {
-    addCheck(checks, 'network', policy.network, verification.network);
+    addCheck(checks, 'network', policy.network, verification.chainHashNetwork);
   }
   if (policy?.expectedOraclePubkey !== undefined) {
     addCheck(
@@ -231,7 +235,17 @@ export function evaluateDlcPolicy(
     addCheck(checks, 'refund-locktime', policy.expectedRefundLocktime, verification.refundLocktime);
   }
 
-  for (const expectation of policy?.expectedLenderOutcomes ?? []) {
+  const expectedLenderOutcomes = policy?.expectedLenderOutcomes;
+  if (expectedLenderOutcomes !== undefined) {
+    const expectedOutcomeNames = expectedLenderOutcomes.map(({ outcome }) => outcome);
+    const actualOutcomeNames = verification.outcomes.map(({ label }) => label);
+    const expectedOutcomesUnique = new Set(expectedOutcomeNames).size === expectedOutcomeNames.length;
+    const actualOutcomesUnique = new Set(actualOutcomeNames).size === actualOutcomeNames.length;
+    addCheck(checks, 'lender-outcomes-unique', true, expectedOutcomesUnique && actualOutcomesUnique);
+    addCheck(checks, 'lender-outcome-set', [...expectedOutcomeNames].sort(), [...actualOutcomeNames].sort());
+  }
+
+  for (const expectation of expectedLenderOutcomes ?? []) {
     const outcome = verification.outcomes.find((candidate) => candidate.label === expectation.outcome);
     const actual = outcome
       ? policy?.lenderRole === 'offerer'

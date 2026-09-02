@@ -50,6 +50,7 @@ export interface DlcOfferMessage {
 }
 
 export interface DlcAcceptMessage {
+  temporaryContractId: Buffer;
   acceptCollateral: bigint;
   fundingPubkey: Buffer;
   payoutSpk: Buffer;
@@ -186,6 +187,13 @@ export function modifyOfferCollateral(offerHex: string, newCollateral: bigint): 
 export function modifyAcceptCollateral(acceptHex: string, newCollateral: bigint): string {
   const accept = deserializeAccept(acceptHex);
   accept.acceptCollateral = newCollateral;
+  return serializeAccept(accept);
+}
+
+/** Modify the temporary contract ID carried by a DlcAccept message. */
+export function modifyAcceptTemporaryContractId(acceptHex: string, temporaryContractId: Buffer): string {
+  const accept = deserializeAccept(acceptHex);
+  accept.temporaryContractId = temporaryContractId;
   return serializeAccept(accept);
 }
 
