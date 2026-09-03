@@ -522,6 +522,7 @@ export async function executeCet(
     0,
     offerTyped.cetLocktime,
     BigInt(offerTyped.fundOutputSerialId),
+    0,
   );
 
   if (outcomeIndex >= dlcTxs.cets.length) {
@@ -955,19 +956,28 @@ function tryComputeContractIdFromSingleFunded(
 async function initDdk(): Promise<DdkModule> {
   const { platform, arch } = process;
   let binName: string;
-  if (platform === 'darwin' && arch === 'arm64') binName = 'ddk-ts.darwin-arm64.node';
-  else if (platform === 'darwin' && arch === 'x64') binName = 'ddk-ts.darwin-x64.node';
-  else if (platform === 'linux' && arch === 'x64') binName = 'ddk-ts.linux-x64-gnu.node';
-  else throw new Error(`Unsupported platform for ddk-ts: ${platform}-${arch}`);
+  let packageName: string;
+  if (platform === 'darwin' && arch === 'arm64') {
+    binName = 'ddk-ts.darwin-arm64.node';
+    packageName = 'ddk-ts-darwin-arm64';
+  } else if (platform === 'darwin' && arch === 'x64') {
+    binName = 'ddk-ts.darwin-x64.node';
+    packageName = 'ddk-ts-darwin-x64';
+  } else if (platform === 'linux' && arch === 'x64') {
+    binName = 'ddk-ts.linux-x64-gnu.node';
+    packageName = 'ddk-ts-linux-x64-gnu';
+  } else throw new Error(`Unsupported platform for ddk-ts: ${platform}-${arch}`);
 
-  // Since 0.3.42 the binary ships in a per-platform package; older versions bundled it in dist/.
+  const ddkPackageDir = path.dirname(require.resolve('@bennyblader/ddk-ts/package.json'));
   const candidates = [
-    path.join(__dirname, `../node_modules/@bennyblader/ddk-ts-${binName.split('.')[1]}`, binName),
-    path.join(__dirname, '../node_modules/@bennyblader/ddk-ts/dist', binName),
+    // ddk-ts >= 0.3.42 publishes native bindings as platform-specific optional packages.
+    path.join(ddkPackageDir, '..', packageName, binName),
+    // ddk-ts <= 0.3.35 shipped native bindings inside the main package dist directory.
+    path.join(ddkPackageDir, 'dist', binName),
   ];
-  const binPath = candidates.find((p) => fs.existsSync(p));
+  const binPath = candidates.find((candidate) => fs.existsSync(candidate));
   if (!binPath) {
-    throw new Error(`ddk-ts native binary not found: ${candidates.join(', ')}`);
+    throw new Error(`ddk-ts native binary not found. Checked: ${candidates.join(', ')}`);
   }
   const m = { exports: {} as DdkModule };
   process.dlopen(m, binPath);
@@ -1110,6 +1120,7 @@ async function verifyAdaptorSignatures(
       0,
       offerTyped.cetLocktime,
       BigInt(offerTyped.fundOutputSerialId),
+      0,
     );
     log(`DDK built fund tx + ${dlcTxs.cets.length} CETs`);
 

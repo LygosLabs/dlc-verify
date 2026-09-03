@@ -1,10 +1,8 @@
-node_modules/
-dist/
-*.tsbuildinfo
-.DS_Store
+pnpm-lock.yaml
+node_modules
+dist
 .vercel
 .env.local
 .env*.local
-.env*
 operator-*.json
 *.pdf

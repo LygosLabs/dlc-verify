@@ -147,6 +147,7 @@ export interface DdkModule {
     fundLocktime: number,
     cetLocktime: number,
     fundOutputSerialId: bigint,
+    contractFlags: number,
   ) => DlcTransactions;
   verifyCetAdaptorSigsFromOracleInfo: (
     adaptorPairs: Array<{ signature: Buffer; proof: Buffer }>,

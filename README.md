@@ -92,6 +92,15 @@ pnpm start
 # Open http://localhost:3456
 ```
 
+The hosted Vercel UI uses `POST /api/verify` as a thin proxy to the Rust verifier
+running in Turnkey Verifiable Cloud. The proxy verifies the Turnkey App Proof,
+checks the per-request challenge, and renders only the result contained in the
+signed proof payload. It does not run the TypeScript verifier on Vercel.
+
+The production Turnkey application is the default target. Self-hosted deployments
+may set `TVC_VERIFIER_URL` to another HTTPS `*.app.turnkey.cloud` application
+origin.
+
 ### Run CLI
 
 ```bash
@@ -163,6 +172,10 @@ The verification steps:
 ## Architecture
 
 ```
+Hosted web verification:
+browser UI → Vercel /api/verify proxy → Rust verifier in Turnkey TVC
+           ← signed App Proof result ←
+
 src/
 ├── verify.ts          # Main verification logic (CLI + library)
 ├── server.ts          # Express web server
@@ -173,6 +186,10 @@ examples/
 
 public/
 └── index.html         # Web UI
+
+api/
+├── verify.js          # TVC proxy + App Proof signature/challenge verification
+└── execute.js         # Optional CET execution API
 
 Verification layers:
 ├── Structural: @node-dlc/messaging deserialization
@@ -186,14 +203,18 @@ Verification layers:
     └── verifyCetAdaptorSigsFromOracleInfo() → true/false
 ```
 
-No backend. No wallet. No private keys. Stateless.
+No wallet. No private keys. Stateless. Local CLI and self-hosted operation remain
+available; the Vercel-hosted verification path delegates verification to the
+publicly inspectable Rust workload in Turnkey TVC.
 
 ---
 
 ## Security model
 
 - **No private keys handled.** The tool only reads message hex and computes public verification.
-- **No server trust required.** You can run the verifier entirely locally or self-host it yourself.
+- **No opaque hosted result.** The Vercel proxy validates the P-256 signature on the Turnkey App Proof and binds it to a fresh browser challenge before displaying its signed result.
+- **Local verification remains available.** You can run the TypeScript verifier locally or self-host it yourself.
+- **Authorization requires a trusted release policy.** An App Proof authenticates the workload result, but relying parties must also validate the exact Turnkey Boot Proof against an approved workload release.
 - **Oracle pubkeys are visible in the DlcOffer.** The oracle's identity and nonce commitment are embedded in the offer. You can compare that pubkey against one you obtained independently, or against a known oracle registry in your own deployment.
 - **DDK is open source.** The native binary is built from [dlcdevkit](https://github.com/bennyblader/ddk-ffi), source-available under MIT.
 

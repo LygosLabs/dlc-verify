@@ -53,8 +53,14 @@
             <div class="w-8 h-8 bg-gray-900 text-white rounded-sm flex items-center justify-center font-mono font-bold text-lg">D</div>
             <span class="font-semibold text-gray-900 tracking-tight">DLC Verify</span>
         </div>
-        <div id="headerEditBtn" class="hidden">
-            <button class="text-blue-600 hover:text-blue-700 font-medium text-sm" onclick="resetToInput()">Verify Another</button>
+        <div class="flex items-center gap-3">
+            <span class="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-card text-xs font-medium">
+                <i class="ph-fill ph-shield-check"></i>
+                Turnkey TVC
+            </span>
+            <div id="headerEditBtn" class="hidden">
+                <button class="text-blue-600 hover:text-blue-700 font-medium text-sm" onclick="resetToInput()">Verify Another</button>
+            </div>
         </div>
     </header>
 
@@ -275,6 +281,40 @@
 
             <!-- Sidebar -->
             <div class="w-full lg:w-80 space-y-6 shrink-0">
+
+                <!-- TEE Evidence -->
+                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-emerald-50 border-b border-emerald-200 px-5 py-3 flex items-center justify-between gap-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Turnkey TEE</h3>
+                        <span id="tvcProofBadge" class="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-medium">
+                            <i class="ph-fill ph-seal-check"></i>
+                            App Proof attached
+                        </span>
+                    </div>
+                    <div class="p-5 space-y-4">
+                        <p class="text-xs text-gray-600 leading-relaxed">The verification ran in Turnkey Verifiable Cloud. The signed App Proof is included in the downloadable evidence.</p>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Signed Verdict</div>
+                            <span id="tvcSignedVerdictDisplay" class="font-mono text-sm text-gray-900">-</span>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Request Challenge</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="tvcChallengeDisplay" class="copy-text font-mono text-xs text-gray-700 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Ephemeral Public Key</div>
+                            <div class="copy-trigger flex items-start gap-2 rounded-sm -mx-1 px-1 py-1 group" data-copy="">
+                                <span id="tvcProofKeyDisplay" class="copy-text font-mono text-xs text-gray-700 break-all transition-colors flex-1 leading-tight">-</span>
+                                <i class="ph ph-copy copy-icon text-gray-400 opacity-0 transition-opacity mt-0.5 shrink-0"></i>
+                            </div>
+                        </div>
+                        <button id="downloadTvcEvidenceBtn" class="w-full border border-gray-300 hover:border-gray-400 bg-white text-gray-700 px-3 py-2 rounded-card text-xs font-medium transition-colors" onclick="downloadTvcEvidence()">Download proof JSON</button>
+                        <p class="text-[11px] text-gray-500 leading-relaxed">The App Proof authenticates the result. Authorization-grade use additionally requires checking its exact Boot Proof and trusted release policy.</p>
+                    </div>
+                </div>
 
                 <!-- Cryptographic Proofs -->
                 <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
@@ -644,6 +684,14 @@
             if (trigger) trigger.setAttribute('data-copy', value || '');
         }
 
+        let lastTvcEvidence = null;
+
+        function createTvcChallenge() {
+            const bytes = new Uint8Array(32);
+            crypto.getRandomValues(bytes);
+            return `dlc-verify-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
+        }
+
         async function doVerify() {
             const offerHex = document.getElementById('offerHex').value.trim();
             const acceptHex = document.getElementById('acceptHex').value.trim();
@@ -667,6 +715,7 @@
                     accept: acceptHex,
                     expectedOraclePubkey: oracleContext.expectedPubkey,
                     network: document.getElementById('networkSelect').value,
+                    challenge: createTvcChallenge(),
                 };
                 if (signHex) {
                     payload.signHex = signHex;
@@ -676,8 +725,15 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const result = await response.json();
-                displayResults(result, oracleContext);
+                const envelope = await response.json();
+                if (!response.ok) {
+                    throw new Error(envelope.error || `Verification request failed (${response.status})`);
+                }
+                if (!envelope.result || !envelope.proof || !envelope.execution) {
+                    throw new Error('Verification response did not include Turnkey TEE evidence');
+                }
+                displayResults(envelope.result, oracleContext);
+                displayTvcEvidence(envelope);
             } catch (err) {
                 document.getElementById('errorMessage').textContent = `Error: ${err.message}`;
                 document.getElementById('errorMessage').classList.remove('hidden');
@@ -688,6 +744,33 @@
                 document.getElementById('loadingOverlay').classList.add('hidden');
                 document.getElementById('verifyBtn').disabled = false;
             }
+        }
+
+        function displayTvcEvidence(envelope) {
+            lastTvcEvidence = {
+                execution: envelope.execution,
+                policyResult: envelope.policyResult,
+                proof: envelope.proof,
+            };
+            const challenge = envelope.execution.challenge || '-';
+            const publicKey = envelope.proof.publicKey || '-';
+            document.getElementById('tvcSignedVerdictDisplay').textContent = envelope.execution.signedVerdict || '-';
+            document.getElementById('tvcChallengeDisplay').textContent = truncateHex(challenge, 18, 12);
+            document.getElementById('tvcProofKeyDisplay').textContent = truncateHex(publicKey, 18, 12);
+            setCopyData('tvcChallengeDisplay', challenge);
+            setCopyData('tvcProofKeyDisplay', publicKey);
+            initCopyTriggers();
+        }
+
+        function downloadTvcEvidence() {
+            if (!lastTvcEvidence) return;
+            const blob = new Blob([JSON.stringify(lastTvcEvidence, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `dlc-verify-tvc-proof-${Date.now()}.json`;
+            anchor.click();
+            URL.revokeObjectURL(url);
         }
 
         function displayResults(result, oracleContext = { expectedPubkey: null, expectedLabel: 'provided oracle pubkey' }) {
