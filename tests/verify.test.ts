@@ -1,4 +1,7 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
+import { deriveLygosOracleEventId, type DlcVerificationPolicy, verifyDlcAgainstPolicy } from '../src/policy';
 import { verifyDlc } from '../src/verify';
 import {
   loadSampleData,
@@ -9,12 +12,16 @@ import {
   modifyCetLocktime,
   modifyOfferCollateral,
   modifyAcceptCollateral,
+  modifyAcceptTemporaryContractId,
   modifyOfferFundingPubkey,
   modifyAcceptFundingPubkey,
   getOraclePubkey,
   generateRandomPubkey,
   generateRandomXOnlyPubkey,
   corruptAdaptorSignatures,
+  corruptAcceptRefundSignature,
+  corruptSignAdaptorSignatures,
+  corruptSignRefundSignature,
 } from './helpers/dlc-builder';
 
 describe('DLC Verification', () => {
@@ -171,6 +178,8 @@ describe('DLC Verification', () => {
       expect(result.oraclePubkeySource).toBe('provided');
       expect(result.expectedOraclePubkey).toBe(wrongPubkey);
       expect(result.extractedOraclePubkey).not.toBe(wrongPubkey);
+      expect(result.verificationStatus).toBe('fail');
+      expect(result.verificationFailures).toContain('oracle-pubkey-mismatch-or-unavailable');
     });
 
     it('should handle oracle pubkey with 0x prefix', async () => {
@@ -256,6 +265,321 @@ describe('DLC Verification', () => {
       const result = await verifyDlc(sampleOffer, sampleAccept);
 
       expect(result.oracleEventId).toBeTruthy();
+    });
+  });
+
+  describe('Complete DlcSign and refund verification', () => {
+    const signedSample = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../examples/testnet-loan-118c9fc9.json'), 'utf8'),
+    ) as { offer: string; accept: string; sign: string; oraclePubkey: string };
+
+    it('cryptographically verifies both adaptor sets and both refund signatures', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.verificationStatus).toBe('pass');
+      expect(result.adaptorValid).toBe(true);
+      expect(result.refundSigValid).toBe(true);
+      expect(result.signAdaptorValid).toBe(true);
+      expect(result.signRefundSigValid).toBe(true);
+      expect(result.signContractIdMatches).toBe(true);
+      expect(result.refundTxId).toBeTruthy();
+      expect(result.fundOutputIndex).not.toBeNull();
+      expect(result.cets).toHaveLength(result.outcomes.length);
+    });
+
+    it('keeps cryptographic verification independent from policy expectations', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        network: 'regtest',
+      });
+
+      expect(result.verificationStatus).toBe('pass');
+      expect(result.expectedOraclePubkey).toBeNull();
+      expect(result.verificationIncomplete).toEqual([]);
+    });
+
+    it('fails when the accepter refund signature is changed', async () => {
+      const result = await verifyDlc(
+        signedSample.offer,
+        corruptAcceptRefundSignature(signedSample.accept),
+        {
+          signHex: signedSample.sign,
+          expectedOraclePubkey: signedSample.oraclePubkey,
+          network: 'regtest',
+        },
+      );
+
+      expect(result.refundSigValid).toBe(false);
+      expect(result.verificationStatus).toBe('fail');
+    });
+
+    it('fails when an offerer adaptor signature is changed', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: corruptSignAdaptorSignatures(signedSample.sign),
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.signAdaptorValid).toBe(false);
+      expect(result.verificationStatus).toBe('fail');
+    });
+
+    it('fails when the offerer refund signature is changed', async () => {
+      const result = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: corruptSignRefundSignature(signedSample.sign),
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.signRefundSigValid).toBe(false);
+      expect(result.verificationStatus).toBe('fail');
+    });
+
+    it('fails when Offer and Accept temporary contract IDs do not match', async () => {
+      const mismatchedAccept = modifyAcceptTemporaryContractId(signedSample.accept, Buffer.alloc(32, 0x42));
+      const result = await verifyDlc(signedSample.offer, mismatchedAccept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+
+      expect(result.verificationStatus).toBe('fail');
+      expect(result.error).toContain('temporary contract IDs do not match');
+      expect(result.verificationFailures).toContain('message-parsing-or-reconstruction-failed');
+    });
+
+    it('evaluates lender terms and returns a deterministic attestation payload', async () => {
+      const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        lenderRole: 'offerer',
+        network: 'regtest',
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        expectedLenderFundingPubkey: baseline.offererFundingPubkey!,
+        expectedLenderPayoutAddress: baseline.offererPayoutAddress!,
+        expectedTotalCollateralSats: baseline.totalCollateral!,
+        oracleEvent: { expectedEventId: baseline.oracleEventId! },
+        expectedCetLocktime: baseline.cetLocktime!,
+        expectedRefundLocktime: baseline.refundLocktime!,
+        expectedLenderOutcomes: baseline.outcomes.map((outcome) => ({
+          outcome: outcome.label,
+          lenderPayoutSats: outcome.offererSats,
+        })),
+      });
+
+      expect(result.verdict).toBe('pass');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.policyCoverage).toBe('complete');
+      expect(result.checks.every((check) => check.status === 'pass')).toBe(true);
+      expect(result.verificationDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(result.attestationPayload.cetTxids).toHaveLength(baseline.cets.length);
+    });
+
+    it('supports cryptographic verification without any policy', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign);
+
+      expect(result.verdict).toBe('incomplete');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('not_provided');
+      expect(result.policyCoverage).toBe('not_provided');
+      expect(result.checks).toEqual([]);
+      expect(result.attestationPayload.policyHash).toBeNull();
+    });
+
+    it('supports an oracle-pubkey-only partial policy', async () => {
+      const result = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          expectedOraclePubkey: signedSample.oraclePubkey,
+        },
+        'regtest',
+      );
+
+      expect(result.verdict).toBe('incomplete');
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.policyCoverage).toBe('partial');
+      expect(result.verification.network).toBe('regtest');
+      expect(result.checks.some((check) => check.id === 'network')).toBe(false);
+      expect(result.checks).toEqual([
+        expect.objectContaining({ id: 'oracle-pubkey', status: 'pass' }),
+      ]);
+    });
+
+    it('can evaluate a partial policy without DlcSign while marking crypto incomplete', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, undefined, {
+        expectedOraclePubkey: signedSample.oraclePubkey,
+      });
+
+      expect(result.verdict).toBe('incomplete');
+      expect(result.cryptographicVerification).toBe('incomplete');
+      expect(result.policyVerification).toBe('pass');
+      expect(result.policyCoverage).toBe('partial');
+    });
+
+    it('fails cryptographic verification and the supplied policy when the oracle pubkey mismatches', async () => {
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        expectedOraclePubkey: generateRandomXOnlyPubkey(),
+      });
+
+      expect(result.verdict).toBe('fail');
+      expect(result.cryptographicVerification).toBe('fail');
+      expect(result.policyVerification).toBe('fail');
+      expect(result.policyCoverage).toBe('partial');
+      expect(result.checks).toEqual([
+        expect.objectContaining({ id: 'oracle-pubkey', status: 'fail' }),
+      ]);
+    });
+
+    it('checks policy network against the offer chain hash, not the caller-selected address network', async () => {
+      const result = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        { network: 'mainnet' },
+        'mainnet',
+      );
+
+      expect(result.verification.network).toBe('mainnet');
+      expect(result.verification.chainHashNetwork).toBe('regtest');
+      expect(result.policyVerification).toBe('fail');
+      expect(result.verdict).toBe('fail');
+      expect(result.checks).toEqual([
+        expect.objectContaining({ id: 'network', status: 'fail', expected: 'mainnet', actual: 'regtest' }),
+      ]);
+    });
+
+    it('requires locktimes and exact lender outcome coverage for a complete policy', async () => {
+      const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+      const commonPolicy = {
+        lenderRole: 'offerer' as const,
+        network: 'regtest' as const,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        expectedLenderFundingPubkey: baseline.offererFundingPubkey!,
+        expectedLenderPayoutAddress: baseline.offererPayoutAddress!,
+        expectedTotalCollateralSats: baseline.totalCollateral!,
+        oracleEvent: { expectedEventId: baseline.oracleEventId! },
+      };
+
+      const missingLocktimes = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          ...commonPolicy,
+          expectedLenderOutcomes: baseline.outcomes.map((outcome) => ({
+            outcome: outcome.label,
+            lenderPayoutSats: outcome.offererSats,
+          })),
+        },
+      );
+      expect(missingLocktimes.policyCoverage).toBe('partial');
+      expect(missingLocktimes.verdict).toBe('incomplete');
+
+      const missingOutcomes = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          ...commonPolicy,
+          expectedCetLocktime: baseline.cetLocktime!,
+          expectedRefundLocktime: baseline.refundLocktime!,
+        },
+      );
+      expect(missingOutcomes.policyCoverage).toBe('partial');
+      expect(missingOutcomes.verdict).toBe('incomplete');
+
+      const subsetOutcomes = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        {
+          ...commonPolicy,
+          expectedCetLocktime: baseline.cetLocktime!,
+          expectedRefundLocktime: baseline.refundLocktime!,
+          expectedLenderOutcomes: [
+            { outcome: baseline.outcomes[0].label, lenderPayoutSats: baseline.outcomes[0].offererSats },
+          ],
+        },
+      );
+      expect(subsetOutcomes.policyCoverage).toBe('complete');
+      expect(subsetOutcomes.policyVerification).toBe('fail');
+      expect(subsetOutcomes.checks).toContainEqual(expect.objectContaining({ id: 'lender-outcome-set', status: 'fail' }));
+    });
+
+    it('rejects duplicate expected lender outcomes', async () => {
+      const baseline = await verifyDlc(signedSample.offer, signedSample.accept, {
+        signHex: signedSample.sign,
+        expectedOraclePubkey: signedSample.oraclePubkey,
+        network: 'regtest',
+      });
+      const firstOutcome = baseline.outcomes[0];
+      const result = await verifyDlcAgainstPolicy(signedSample.offer, signedSample.accept, signedSample.sign, {
+        expectedLenderOutcomes: [
+          { outcome: firstOutcome.label, lenderPayoutSats: firstOutcome.offererSats },
+          { outcome: firstOutcome.label, lenderPayoutSats: firstOutcome.offererSats },
+        ],
+      });
+
+      expect(result.policyVerification).toBe('fail');
+      expect(result.checks).toContainEqual(
+        expect.objectContaining({ id: 'lender-outcomes-unique', status: 'fail' }),
+      );
+    });
+
+    it('returns a policy failure for a malformed oracle event instead of throwing', async () => {
+      const malformedPolicy = { oracleEvent: {} } as unknown as DlcVerificationPolicy;
+      const result = await verifyDlcAgainstPolicy(
+        signedSample.offer,
+        signedSample.accept,
+        signedSample.sign,
+        malformedPolicy,
+        'regtest',
+      );
+
+      expect(result.cryptographicVerification).toBe('pass');
+      expect(result.policyVerification).toBe('fail');
+      expect(result.verdict).toBe('fail');
+      expect(result.checks).toEqual([expect.objectContaining({ id: 'oracle-event-id', status: 'fail' })]);
+    });
+  });
+
+  describe('Loan oracle event ID policy', () => {
+    it('matches the canonical loan event ID derivation', () => {
+      expect(
+        deriveLygosOracleEventId({
+          eventType: ' loan-matured ',
+          loanId: ' loan-123 ',
+          repaymentAddress: ' bc1qrepayment ',
+          repaymentAmount: ' 100000 ',
+        }),
+      ).toBe('loan-matured-3a0c8f7e56452482f216ca063904ee5f58c7cfe2e245982599955fcae2668071');
+    });
+
+    it('binds the repayment address into the derived event ID', () => {
+      const base = {
+        eventType: 'loan-matured',
+        loanId: 'loan-123',
+        repaymentAddress: 'bc1qrepayment',
+        repaymentAmount: '100000',
+      };
+      expect(deriveLygosOracleEventId(base)).not.toBe(
+        deriveLygosOracleEventId({ ...base, repaymentAddress: 'bc1qdifferent' }),
+      );
     });
   });
 });

@@ -1,5 +1,7 @@
 import * as path from 'node:path';
 import express, { Request, Response } from 'express';
+import type { DlcVerificationPolicy } from './policy';
+import { verifyDlcAgainstPolicy } from './policy';
 import { executeCet, verifyDlc } from './verify';
 
 const app = express();
@@ -55,6 +57,46 @@ app.post('/api/verify', async (req: Request<object, object, VerifyRequestBody>, 
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+interface PolicyVerifyRequestBody {
+  offer?: string;
+  accept?: string;
+  signHex?: string;
+  network?: string;
+  policy?: DlcVerificationPolicy;
+}
+
+app.post(
+  '/api/verify-policy',
+  async (req: Request<object, object, PolicyVerifyRequestBody>, res: Response): Promise<void> => {
+    const { offer, accept, signHex, network, policy } = req.body;
+    if (!offer || !accept) {
+      res.status(400).json({ error: 'Missing required fields: offer, accept' });
+      return;
+    }
+    if (policy !== undefined && (typeof policy !== 'object' || policy === null || Array.isArray(policy))) {
+      res.status(400).json({ error: 'Malformed policy: must be a JSON object' });
+      return;
+    }
+    const outcomes = policy?.expectedLenderOutcomes;
+    if (
+      outcomes !== undefined &&
+      (!Array.isArray(outcomes) ||
+        outcomes.some((o) => typeof o?.outcome !== 'string' || typeof o?.lenderPayoutSats !== 'string'))
+    ) {
+      res.status(400).json({
+        error: 'Malformed policy: expectedLenderOutcomes must be an array of { outcome, lenderPayoutSats } strings',
+      });
+      return;
+    }
+
+    try {
+      res.json(await verifyDlcAgainstPolicy(offer, accept, signHex, policy, network));
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  },
+);
 
 interface ExecuteRequestBody {
   offer?: string;

@@ -6,6 +6,8 @@ import * as bitcoin from 'bitcoinjs-lib';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { verify, math } = require('bip-schnorr');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const secp256k1 = require('secp256k1');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { BitcoinNetworks, chainHashFromNetwork } = require('bitcoin-networks');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { DlcTxBuilder } = require('@node-dlc/core');
@@ -24,6 +26,7 @@ const {
 import type {
   AdaptorVerificationResult,
   CetExecutionResult,
+  CetTransactionInfo,
   CliArgs,
   ContractInfo,
   DdkModule,
@@ -33,6 +36,7 @@ import type {
   PartyParams,
   SampleData,
   SingleFundedComputation,
+  TransactionOutputInfo,
   VerificationResult,
   VerifyOptions,
 } from './types';
@@ -86,6 +90,59 @@ function normalizeOraclePubkeyHex(pubkey: string | undefined | null): string | n
     throw new Error('Oracle pubkey must be a 32-byte x-only pubkey (64 hex chars)');
   }
   return normalized;
+}
+
+function computeTranscriptHash(offerHex: string, acceptHex: string, signHex?: string): string {
+  const hash = crypto.createHash('sha256');
+  hash.update(Buffer.from('Lygos/DLCVerify/transcript/v1\0', 'utf8'));
+
+  for (const [label, value] of [
+    ['offer', offerHex],
+    ['accept', acceptHex],
+    ['sign', signHex ?? ''],
+  ]) {
+    const normalized = value.trim().toLowerCase();
+    const bytes =
+      /^[0-9a-f]*$/.test(normalized) && normalized.length % 2 === 0
+        ? Buffer.from(normalized, 'hex')
+        : Buffer.from(normalized, 'utf8');
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(bytes.length);
+    hash.update(Buffer.from(label, 'utf8'));
+    hash.update(Buffer.from([0]));
+    hash.update(length);
+    hash.update(bytes);
+  }
+
+  return hash.digest('hex');
+}
+
+function finalizeVerificationStatus(result: VerificationResult, signRequested: boolean): void {
+  const failures: string[] = [];
+  const incomplete: string[] = [];
+
+  if (result.error) failures.push('message-parsing-or-reconstruction-failed');
+  if (result.expectedOraclePubkey !== null && result.oraclePubkeyMatchesExpected !== true) {
+    failures.push('oracle-pubkey-mismatch-or-unavailable');
+  }
+  if (!result.oracleSigValid) failures.push('oracle-announcement-signature-invalid');
+  if (!result.adaptorSigVerificationAvailable) failures.push('accepter-adaptor-verification-unavailable');
+  else if (result.adaptorValid !== true) failures.push('accepter-adaptor-signatures-invalid');
+  if (result.refundSigValid !== true) failures.push('accepter-refund-signature-invalid-or-unavailable');
+
+  if (!signRequested) {
+    incomplete.push('dlc-sign-not-provided');
+  } else if (!result.signAvailable) {
+    failures.push('dlc-sign-invalid-or-unparseable');
+  } else {
+    if (result.signContractIdMatches !== true) failures.push('sign-contract-id-mismatch-or-unavailable');
+    if (result.signAdaptorValid !== true) failures.push('offerer-adaptor-signatures-invalid-or-unavailable');
+    if (result.signRefundSigValid !== true) failures.push('offerer-refund-signature-invalid-or-unavailable');
+  }
+
+  result.verificationFailures = [...new Set(failures)];
+  result.verificationIncomplete = [...new Set(incomplete)];
+  result.verificationStatus = failures.length > 0 ? 'fail' : incomplete.length > 0 ? 'incomplete' : 'pass';
 }
 
 function parseCliArgs(args: string[]): CliArgs {
@@ -181,6 +238,12 @@ export async function verifyDlc(
     offerInputs: [],
     acceptInputs: [],
     contractId: null,
+    transcriptHash: computeTranscriptHash(offerHex, acceptHex, options.signHex),
+    fundOutputIndex: null,
+    fundingValueSats: null,
+    refundTxId: null,
+    refundOutputs: [],
+    cets: [],
     // Adaptor signature verification
     adaptorSigVerificationAvailable: false,
     adaptorSigVerificationNote: null,
@@ -190,6 +253,8 @@ export async function verifyDlc(
     adaptorValidCount: 0,
     adaptorTotalCount: 0,
     adaptorError: null,
+    refundSigValid: null,
+    refundSigError: null,
     // Sign message verification
     signAvailable: false,
     signContractId: null,
@@ -198,6 +263,11 @@ export async function verifyDlc(
     signAdaptorValidCount: 0,
     signAdaptorTotalCount: 0,
     signAdaptorError: null,
+    signRefundSigValid: null,
+    signRefundSigError: null,
+    verificationStatus: 'incomplete',
+    verificationFailures: [],
+    verificationIncomplete: [],
     // errors
     error: null,
   };
@@ -212,6 +282,10 @@ export async function verifyDlc(
     const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
     const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
     log('parsed offer & accept successfully');
+
+    if (!offer.temporaryContractId.equals(accept.temporaryContractId)) {
+      throw new Error('Offer and Accept temporary contract IDs do not match');
+    }
 
     const contract = extractContractInfo(offer.contractInfo);
     const descriptor = contract.descriptor;
@@ -326,7 +400,24 @@ export async function verifyDlc(
       }
     }
 
-    // Adaptor signature verification
+    // Parse DlcSign before transaction reconstruction so the same authoritative
+    // CET/refund set is used to verify both parties' signatures.
+    let signMessage: any = null;
+    if (options.signHex) {
+      log(`sign hex provided (${options.signHex.length}ch), parsing`);
+      try {
+        signMessage = DlcSign.deserialize(Buffer.from(options.signHex, 'hex'));
+        result.signAvailable = true;
+        result.signContractId = signMessage.contractId.toString('hex');
+      } catch (signErr) {
+        const message = `Failed to parse sign message: ${(signErr as Error).message}`;
+        result.signAdaptorError = message;
+        result.signRefundSigError = message;
+        log(`sign parse FAILED: ${(signErr as Error).message}`);
+      }
+    }
+
+    // Adaptor and refund signature verification
     log('invoking adaptor signature verification');
     const adaptorResult = await verifyAdaptorSignatures(
       offer,
@@ -334,6 +425,8 @@ export async function verifyDlc(
       descriptor,
       fundingAddress,
       oracleAnnouncement,
+      signMessage,
+      network,
       options.logPrefix,
     );
     log(
@@ -349,63 +442,38 @@ export async function verifyDlc(
     result.adaptorValidCount = adaptorResult.adaptorValidCount;
     result.adaptorTotalCount = adaptorResult.adaptorTotalCount;
     result.adaptorError = adaptorResult.adaptorError;
+    result.refundSigValid = adaptorResult.refundSigValid;
+    result.refundSigError = adaptorResult.refundSigError;
+    result.signAdaptorValid = adaptorResult.signAdaptorValid;
+    result.signAdaptorValidCount = adaptorResult.signAdaptorValidCount;
+    result.signAdaptorTotalCount = adaptorResult.signAdaptorTotalCount;
+    result.signAdaptorError = result.signAdaptorError ?? adaptorResult.signAdaptorError;
+    result.signRefundSigValid = adaptorResult.signRefundSigValid;
+    result.signRefundSigError = result.signRefundSigError ?? adaptorResult.signRefundSigError;
+    result.fundOutputIndex = adaptorResult.fundOutputIndex;
+    result.fundingValueSats = adaptorResult.fundingValueSats;
+    result.refundTxId = adaptorResult.refundTxId;
+    result.refundOutputs = adaptorResult.refundOutputs;
+    result.cets = adaptorResult.cets;
 
     // Prefer DDK-computed contract ID (uses the authoritative funding tx)
     if (adaptorResult.computedContractId) {
       result.contractId = adaptorResult.computedContractId;
     }
 
-    // Sign message verification
-    if (options.signHex) {
-      log(`sign hex provided (${options.signHex.length}ch), parsing`);
-      try {
-        const sign = DlcSign.deserialize(Buffer.from(options.signHex, 'hex'));
-        result.signAvailable = true;
-        result.signContractId = sign.contractId.toString('hex');
-        log(
-          `parsed sign message: contractId=${result.signContractId} ` +
-            `cetAdaptorSigs=${sign.cetAdaptorSignatures?.sigs?.length ?? 'n/a'}`,
-        );
-
-        // Check if contract ID matches
-        if (result.contractId) {
-          result.signContractIdMatches = result.signContractId === result.contractId;
-          log(
-            `sign contractId match=${result.signContractIdMatches} ` +
-              `(sign=${result.signContractId} vs computed=${result.contractId})`,
-          );
-        } else {
-          log('no computed contractId available to compare against sign.contractId');
-        }
-
-        // Verify offerer's CET adaptor signatures
-        if (adaptorResult.available && sign.cetAdaptorSignatures?.sigs) {
-          try {
-            const signAdaptorSigs = sign.cetAdaptorSignatures.sigs;
-            result.signAdaptorTotalCount = signAdaptorSigs.length;
-            // For now just count the sigs - full verification would need DDK
-            result.signAdaptorValidCount = signAdaptorSigs.length;
-            result.signAdaptorValid = signAdaptorSigs.length > 0;
-          } catch (sigErr) {
-            result.signAdaptorError = (sigErr as Error).message;
-            result.signAdaptorValid = false;
-            log(`sign adaptor sig processing threw: ${(sigErr as Error).message}`);
-          }
-        } else {
-          log(
-            `sign adaptor verification skipped: adaptorAvailable=${adaptorResult.available} ` +
-              `hasSigs=${!!sign.cetAdaptorSignatures?.sigs}`,
-          );
-        }
-      } catch (signErr) {
-        result.signAdaptorError = `Failed to parse sign message: ${(signErr as Error).message}`;
-        log(`sign parse FAILED: ${(signErr as Error).message}`);
-      }
+    if (signMessage && result.contractId) {
+      result.signContractIdMatches = result.signContractId === result.contractId;
+      log(
+        `sign contractId match=${result.signContractIdMatches} ` +
+          `(sign=${result.signContractId} vs computed=${result.contractId})`,
+      );
     }
   } catch (err) {
     result.error = (err as Error).message;
     log(`verifyDlc threw: ${(err as Error).stack ?? (err as Error).message}`);
   }
+
+  finalizeVerificationStatus(result, Boolean(options.signHex));
 
   return result;
 }
@@ -994,6 +1062,50 @@ function getTaggedOutcomeHash(outcomeText: string): Buffer {
     .digest();
 }
 
+interface AdaptorSignatureParts {
+  encryptedSig: Buffer;
+  dleqProof: Buffer;
+}
+
+function extractAdaptorSignatures(
+  raw: { sigs?: AdaptorSignatureParts[] } | AdaptorSignatureParts[] | undefined,
+): AdaptorSignatureParts[] {
+  if (Array.isArray(raw)) return raw;
+  return raw?.sigs ?? [];
+}
+
+function transactionOutputs(rawBytes: Buffer, network: bitcoin.Network): TransactionOutputInfo[] {
+  const tx = bitcoin.Transaction.fromBuffer(rawBytes);
+  return tx.outs.map((output, index) => {
+    const script = Buffer.from(output.script);
+    let address: string | null = null;
+    try {
+      address = bitcoin.address.fromOutputScript(script, network);
+    } catch {
+      // Non-standard scripts remain inspectable by scriptPubKey.
+    }
+    return {
+      index,
+      sats: output.value.toString(),
+      scriptPubKey: script.toString('hex'),
+      address,
+    };
+  });
+}
+
+function verifyRefundSignature(
+  refundRawBytes: Buffer,
+  signature: Buffer | undefined,
+  signerPubkey: Buffer,
+  fundingScript: Buffer,
+  fundOutputValue: bigint,
+): boolean {
+  if (signature?.length !== 64) return false;
+  const refundTx = bitcoin.Transaction.fromBuffer(refundRawBytes);
+  const sighash = refundTx.hashForWitnessV0(0, fundingScript, fundOutputValue, bitcoin.Transaction.SIGHASH_ALL);
+  return secp256k1.ecdsaVerify(signature, sighash, signerPubkey);
+}
+
 async function verifyAdaptorSignatures(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   offer: any,
@@ -1003,6 +1115,9 @@ async function verifyAdaptorSignatures(
   descriptor: any,
   _fundingAddress: FundingAddressInfo,
   oracleAnnouncement: OracleAnnouncementResult | null,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sign: any | null,
+  network: bitcoin.Network,
   logPrefix?: string,
 ): Promise<AdaptorVerificationResult> {
   const log = (msg: string): void => {
@@ -1019,7 +1134,19 @@ async function verifyAdaptorSignatures(
     adaptorTotalCount: 0,
     adaptorError: null,
     refundSigValid: null,
+    refundSigError: null,
+    signAdaptorValid: null,
+    signAdaptorValidCount: 0,
+    signAdaptorTotalCount: 0,
+    signAdaptorError: null,
+    signRefundSigValid: null,
+    signRefundSigError: null,
     computedContractId: null,
+    fundOutputIndex: null,
+    fundingValueSats: null,
+    refundTxId: null,
+    refundOutputs: [],
+    cets: [],
   };
 
   try {
@@ -1073,6 +1200,7 @@ async function verifyAdaptorSignatures(
       cetAdaptorSignatures?:
         | { sigs?: Array<{ encryptedSig: Buffer; dleqProof: Buffer }> }
         | Array<{ encryptedSig: Buffer; dleqProof: Buffer }>;
+      refundSignature?: Buffer;
     };
 
     // Build DLC transactions via DDK (deterministic reconstruction)
@@ -1154,7 +1282,7 @@ async function verifyAdaptorSignatures(
 
     // Adaptor pairs: for enum contracts, concat encryptedSig + dleqProof into signature field
     const adaptorSigsRaw = acceptTyped.cetAdaptorSignatures;
-    const adaptorSigs = Array.isArray(adaptorSigsRaw) ? adaptorSigsRaw : adaptorSigsRaw?.sigs || [];
+    const adaptorSigs = extractAdaptorSignatures(adaptorSigsRaw);
     log(
       `accept adaptor sigs: count=${adaptorSigs.length} ` +
         `shape=${Array.isArray(adaptorSigsRaw) ? 'array' : 'object-with-sigs'} ` +
@@ -1175,6 +1303,37 @@ async function verifyAdaptorSignatures(
     }
     log(`fundOutputIndex=${fundOutputIndex} fundOutputValue=${fundOutput.value}`);
 
+    result.available = true;
+    result.fundTxId = fundTxId;
+    result.cetCount = dlcTxs.cets.length;
+    result.fundOutputIndex = fundOutputIndex;
+    result.fundingValueSats = fundOutput.value.toString();
+    result.refundTxId = bitcoin.Transaction.fromBuffer(dlcTxs.refund.rawBytes).getId();
+    result.refundOutputs = transactionOutputs(dlcTxs.refund.rawBytes, network);
+    result.cets = dlcTxs.cets.map((cet, index): CetTransactionInfo => {
+      const tx = bitcoin.Transaction.fromBuffer(cet.rawBytes);
+      return {
+        outcome: descriptor.outcomes[index]?.outcome ?? `outcome-${index}`,
+        txid: tx.getId(),
+        locktime: tx.locktime,
+        outputs: transactionOutputs(cet.rawBytes, network),
+      };
+    });
+
+    try {
+      result.refundSigValid = verifyRefundSignature(
+        dlcTxs.refund.rawBytes,
+        acceptTyped.refundSignature,
+        acceptTyped.fundingPubkey,
+        fundingScript,
+        fundOutput.value,
+      );
+      result.refundSigError = result.refundSigValid ? null : 'Accepter refund signature verification failed';
+    } catch (refundErr) {
+      result.refundSigValid = false;
+      result.refundSigError = (refundErr as Error).message;
+    }
+
     // Compute contract ID from DDK-built funding tx (authoritative source)
     if (offer.temporaryContractId && fundTxId) {
       result.computedContractId = computeContractIdFromFundingOutpoint(
@@ -1192,24 +1351,23 @@ async function verifyAdaptorSignatures(
     );
     let isValid = false;
     try {
-      isValid = ddk.verifyCetAdaptorSigsFromOracleInfo(
-        adaptorPairs,
-        dlcTxs.cets,
-        oracleInfo,
-        acceptTyped.fundingPubkey,
-        fundingScript,
-        fundOutput.value,
-        messagesForDdk,
-      );
+      isValid =
+        adaptorPairs.length === dlcTxs.cets.length &&
+        ddk.verifyCetAdaptorSigsFromOracleInfo(
+          adaptorPairs,
+          dlcTxs.cets,
+          oracleInfo,
+          acceptTyped.fundingPubkey,
+          fundingScript,
+          fundOutput.value,
+          messagesForDdk,
+        );
       log(`ddk.verifyCetAdaptorSigsFromOracleInfo returned ${isValid}`);
     } catch (ddkErr) {
       log(`ddk.verifyCetAdaptorSigsFromOracleInfo threw: ${(ddkErr as Error).stack ?? (ddkErr as Error).message}`);
       throw ddkErr;
     }
 
-    result.available = true;
-    result.fundTxId = fundTxId;
-    result.cetCount = dlcTxs.cets.length;
     result.adaptorTotalCount = adaptorSigs.length;
     result.adaptorValidCount = isValid ? adaptorSigs.length : 0;
     result.adaptorValid = isValid;
@@ -1217,6 +1375,49 @@ async function verifyAdaptorSignatures(
     result.note = isValid
       ? `All ${result.adaptorTotalCount} CET adaptor signatures cryptographically valid (DDK)`
       : 'Adaptor signature verification failed';
+
+    if (sign) {
+      const signAdaptorSigs = extractAdaptorSignatures(sign.cetAdaptorSignatures);
+      const signAdaptorPairs = signAdaptorSigs.map((sig) => ({
+        signature: Buffer.concat([sig.encryptedSig, sig.dleqProof]),
+        proof: Buffer.alloc(0),
+      }));
+      result.signAdaptorTotalCount = signAdaptorSigs.length;
+      try {
+        result.signAdaptorValid =
+          signAdaptorPairs.length === dlcTxs.cets.length &&
+          ddk.verifyCetAdaptorSigsFromOracleInfo(
+            signAdaptorPairs,
+            dlcTxs.cets,
+            oracleInfo,
+            offerTyped.fundingPubkey,
+            fundingScript,
+            fundOutput.value,
+            messagesForDdk,
+          );
+        result.signAdaptorValidCount = result.signAdaptorValid ? signAdaptorSigs.length : 0;
+        result.signAdaptorError = result.signAdaptorValid
+          ? null
+          : 'DDK verification of offerer CET adaptor signatures returned false';
+      } catch (signAdaptorErr) {
+        result.signAdaptorValid = false;
+        result.signAdaptorError = (signAdaptorErr as Error).message;
+      }
+
+      try {
+        result.signRefundSigValid = verifyRefundSignature(
+          dlcTxs.refund.rawBytes,
+          sign.refundSignature,
+          offerTyped.fundingPubkey,
+          fundingScript,
+          fundOutput.value,
+        );
+        result.signRefundSigError = result.signRefundSigValid ? null : 'Offerer refund signature verification failed';
+      } catch (signRefundErr) {
+        result.signRefundSigValid = false;
+        result.signRefundSigError = (signRefundErr as Error).message;
+      }
+    }
     return result;
   } catch (err) {
     result.note = `Adaptor verification unavailable: ${(err as Error).message}`;
@@ -1302,7 +1503,15 @@ async function main(): Promise<void> {
     }
   }
 
-  const adaptorResult = await verifyAdaptorSignatures(offer, accept, descriptor, fundingAddress, oracleAnnouncement);
+  const adaptorResult = await verifyAdaptorSignatures(
+    offer,
+    accept,
+    descriptor,
+    fundingAddress,
+    oracleAnnouncement,
+    null,
+    network,
+  );
   const singleFundedComputation = tryComputeContractIdFromSingleFunded(
     offer as Parameters<typeof tryComputeContractIdFromSingleFunded>[0],
     accept as Parameters<typeof tryComputeContractIdFromSingleFunded>[1],
@@ -1428,6 +1637,7 @@ async function main(): Promise<void> {
     const signResult = await verifyDlc(offerHex, acceptHex, {
       expectedOraclePubkey: normalizedExpectedOraclePubkey || undefined,
       signHex,
+      network: cliNetwork,
     });
     lines.push('');
     lines.push('Sign message verification:');
@@ -1446,6 +1656,16 @@ async function main(): Promise<void> {
     } else {
       lines.push('  Sign adaptor signatures: not verified');
     }
+    if (signResult.signRefundSigValid === true) {
+      lines.push('  Sign refund signature: CRYPTOGRAPHICALLY VALID');
+    } else if (signResult.signRefundSigValid === false) {
+      lines.push(
+        `  Sign refund signature: CRYPTOGRAPHICALLY INVALID${signResult.signRefundSigError ? ` - ${signResult.signRefundSigError}` : ''}`,
+      );
+    } else {
+      lines.push('  Sign refund signature: not verified');
+    }
+    lines.push(`  Overall verification status: ${signResult.verificationStatus.toUpperCase()}`);
   }
 
   // CET execution (when attestation provided)

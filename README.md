@@ -31,7 +31,8 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - Inspect payout outcomes and collateral splits before signing
 - Verify oracle identity, event IDs, locktimes, and funding data
 - Confirm CET adaptor signatures are cryptographically valid
-- Verify DlcSign message: contract ID match and offerer adaptor signatures
+- Verify both parties' CET adaptor signatures and refund signatures
+- Apply explicit lender/oracle/collateral/event-ID policy and return a deterministic attestation payload
 - Run it locally or self-host it without trusting a third-party backend
 
 ---
@@ -59,7 +60,52 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 ### Sign message verification (optional)
 
 - Verifies the DlcSign contract ID matches the computed contract ID from the offer/accept
-- Verifies the offerer's CET adaptor signatures from the sign message
+- Cryptographically verifies the offerer's CET adaptor signatures from the sign message
+- Verifies the offerer's refund signature against the reconstructed refund transaction
+
+### Policy verification and attestations
+
+`verifyDlcAgainstPolicy()` and `POST /api/verify-policy` accept an optional, sparse policy. The verifier always performs every cryptographic check supported by the supplied DLC messages, then evaluates only the policy expectations the caller supplied. A borrower can provide no policy, only an expected oracle pubkey, or a complete lender policy.
+
+The browser UI exposes the same flow behind a collapsed **Policy verification** toggle. Event-ID and additional checks use their own disclosures inside the policy panel. With the toggle off, the standard form and results stay unchanged; when enabled, only supplied policy fields are evaluated and the policy checks, coverage, verdict, digest, and attestation payload are shown.
+
+A complete lender policy supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
+
+The response keeps three concepts separate:
+
+- `cryptographicVerification` — `pass`, `fail`, or `incomplete`, based only on message/signature verification
+- `policyVerification` — `not_provided`, `pass`, or `fail`, based only on supplied expectations
+- `policyCoverage` — `not_provided`, `partial`, or `complete`
+
+The overall `verdict` is `pass` only when cryptographic verification passes and a complete policy passes. A matching partial policy returns `verdict: "incomplete"` alongside `policyVerification: "pass"`; any supplied expectation mismatch returns `verdict: "fail"`.
+
+For example, an oracle-only policy is valid:
+
+```json
+{
+  "offer": "<offer hex>",
+  "accept": "<accept hex>",
+  "signHex": "<optional sign hex>",
+  "policy": {
+    "expectedOraclePubkey": "<expected x-only oracle pubkey>"
+  }
+}
+```
+
+The result includes:
+
+- A pass/fail check for every expected term
+- Deterministically reconstructed funding output, refund transaction, and CET transaction IDs
+- A domain-separated transcript hash over offer/accept/sign
+- A canonical `lygos.dlc-verification.v1` attestation payload and digest for downstream signing
+
+The loan oracle event ID is derived as:
+
+```text
+eventType-SHA256(eventType//loanId//repaymentAddress//repaymentAmount)
+```
+
+Bitcoin block inclusion and unspent-output checks intentionally remain outside this library. An integration adapter can query a configured Bitcoin RPC and bind the result to `fundingTxId` and `fundOutputIndex` from the attestation payload.
 
 ### CET execution (optional — escape hatch)
 
@@ -93,9 +139,18 @@ pnpm start
 ```
 
 The hosted Vercel UI uses `POST /api/verify` as a thin proxy to the Rust verifier
-running in Turnkey Verifiable Cloud. The proxy verifies the Turnkey App Proof,
-checks the per-request challenge, and renders only the result contained in the
-signed proof payload. It does not run the TypeScript verifier on Vercel.
+running in Turnkey Verifiable Cloud. It supports the full policy form described
+above, including direct or derived event IDs. The proxy verifies the Turnkey
+P-256 App Proof signature, pins the verifier version, checks the one-time
+challenge, recomputes the canonical request digest, and renders only the result
+contained in the signed proof payload. It does not run the TypeScript verifier
+on Vercel.
+
+The downloadable proof JSON includes the normalized request, signed policy
+result, App Proof, and execution metadata so the request binding can be checked
+independently. The browser flow does not independently validate the workload's
+Boot Proof or match it to a trusted release policy; that additional check is
+required before treating a result as authorization-grade TEE evidence.
 
 The production Turnkey application is the default target. Self-hosted deployments
 may set `TVC_VERIFIER_URL` to another HTTPS `*.app.turnkey.cloud` application
@@ -178,6 +233,7 @@ browser UI → Vercel /api/verify proxy → Rust verifier in Turnkey TVC
 
 src/
 ├── verify.ts          # Main verification logic (CLI + library)
+├── policy.ts          # Fail-closed lender policy and attestation payload
 ├── server.ts          # Express web server
 └── types.ts           # TypeScript interfaces
 
@@ -199,8 +255,9 @@ Verification layers:
 │   └── P2WSH address reconstruction (bitcoinjs-lib)
 │
 └── Cryptographic: DDK native binary (@bennyblader/ddk-ts)
-    ├── createDlcTransactions() → fund TX + CETs
-    └── verifyCetAdaptorSigsFromOracleInfo() → true/false
+    ├── createDlcTransactions() → fund TX + CETs + refund TX
+    ├── verifyCetAdaptorSigsFromOracleInfo() → true/false
+    └── secp256k1 ECDSA verification → both refund signatures
 ```
 
 No wallet. No private keys. Stateless. Local CLI and self-hosted operation remain
@@ -223,8 +280,9 @@ publicly inspectable Rust workload in Turnkey TVC.
 ## Roadmap
 
 - [ ] Accept hex via stdin in addition to CLI args
-- [x] DlcSign verification (contract ID match + offerer adaptor signatures)
-- [ ] Refund signature verification
+- [x] DlcSign verification (contract ID match + cryptographic offerer adaptor signatures)
+- [x] Refund signature verification for DlcAccept and DlcSign
+- [x] Fail-closed policy verification and deterministic attestation payload
 - [ ] Broader DLC shape support beyond the current enumerated focus
 - [ ] Oracle pubkey registry / known-oracle presets for hosted deployments
 - [ ] Optional hosted instance

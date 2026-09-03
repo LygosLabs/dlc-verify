@@ -62,6 +62,7 @@ declare module '@node-dlc/messaging' {
 
   export class DlcAccept {
     static deserialize(data: Buffer): DlcAccept;
+    temporaryContractId: Buffer;
     fundingPubkey: Buffer;
     changeSpk: Buffer;
     payoutSpk: Buffer;

@@ -1,14 +1,17 @@
-const { createPublicKey, verify } = require('node:crypto');
+const { createHash, createPublicKey, verify } = require('node:crypto');
 
 const DEFAULT_TVC_VERIFIER_URL =
   'https://app-bd66858d-2584-4e34-ae43-564de32aeccb.app.turnkey.cloud';
 const MAX_REQUEST_BYTES = 7 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 28_000;
-const NETWORKS = new Set(['mainnet', 'testnet', 'testnet4', 'regtest', 'signet']);
+const EXPECTED_TVC_VERIFIER_VERSION = '0.2.0';
+const NETWORKS = new Set(['mainnet', 'testnet', 'regtest']);
 const P256_SPKI_PREFIX = Buffer.from(
   '3059301306072a8648ce3d020106082a8648ce3d030107034200',
   'hex',
 );
+
+class ClientInputError extends Error {}
 
 async function readJson(req, maxBytes = MAX_REQUEST_BYTES) {
   if (req.body) {
@@ -35,6 +38,51 @@ function cleanHex(value) {
   return hex || null;
 }
 
+function getVerificationPolicy(rawPolicy, expectedOraclePubkey) {
+  if (rawPolicy !== undefined) {
+    if (!rawPolicy || typeof rawPolicy !== 'object' || Array.isArray(rawPolicy)) {
+      throw new ClientInputError('Policy must be a JSON object');
+    }
+    if (expectedOraclePubkey) {
+      throw new ClientInputError(
+        'Provide expectedOraclePubkey inside policy or as a top-level legacy field, not both',
+      );
+    }
+    return rawPolicy;
+  }
+  return expectedOraclePubkey ? { expectedOraclePubkey } : undefined;
+}
+
+// qos_json canonicalization used by the Rust verifier: object keys are sorted,
+// null object fields are omitted, array order is preserved, and integers are
+// encoded as decimal strings.
+function qosJsonStringify(value, inArray = false) {
+  if (value === null || value === undefined) return inArray ? 'null' : undefined;
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) {
+      throw new ClientInputError('TVC request numbers must be safe integers');
+    }
+    return JSON.stringify(String(value));
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => qosJsonStringify(item, true)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const fields = Object.keys(value)
+      .filter((key) => value[key] !== null && value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${qosJsonStringify(value[key])}`);
+    return `{${fields.join(',')}}`;
+  }
+  throw new ClientInputError('TVC request contains an unsupported JSON value');
+}
+
+function computeRequestDigest(request) {
+  return createHash('sha256').update(qosJsonStringify(request)).digest('hex');
+}
+
 function getTvcEndpoint() {
   const configured = process.env.TVC_VERIFIER_URL?.trim() || DEFAULT_TVC_VERIFIER_URL;
   const base = new URL(configured);
@@ -59,7 +107,7 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function validateProofEnvelope(envelope, challenge) {
+function validateProofEnvelope(envelope, challenge, expectedRequestDigest) {
   if (!envelope || typeof envelope !== 'object' || !envelope.result || !envelope.proof) {
     throw new Error('Turnkey TVC returned an invalid proof envelope');
   }
@@ -80,9 +128,20 @@ function validateProofEnvelope(envelope, challenge) {
   if (
     signedPayload.proofType !== 'APP_PROOF_TYPE_LYGOS_DLC_VERIFICATION' ||
     signedPayload.schemaVersion !== '1' ||
-    !signedPayload.result
+    !signedPayload.result ||
+    typeof signedPayload.result !== 'object' ||
+    Array.isArray(signedPayload.result) ||
+    !signedPayload.result.verification ||
+    typeof signedPayload.result.verification !== 'object' ||
+    Array.isArray(signedPayload.result.verification)
   ) {
     throw new Error('Turnkey TVC signed proof payload has an unexpected schema');
+  }
+  if (signedPayload.verifierVersion !== EXPECTED_TVC_VERIFIER_VERSION) {
+    throw new Error('Turnkey TVC proof was produced by an unexpected verifier version');
+  }
+  if (signedPayload.requestDigest !== expectedRequestDigest) {
+    throw new Error('Turnkey TVC proof is not bound to this verification request');
   }
   return signedPayload;
 }
@@ -126,6 +185,7 @@ module.exports = async function handler(req, res) {
     const accept = cleanHex(body.accept);
     const signHex = cleanHex(body.signHex);
     const expectedOraclePubkey = cleanHex(body.expectedOraclePubkey);
+    const policy = getVerificationPolicy(body.policy, expectedOraclePubkey);
     const challenge = typeof body.challenge === 'string' ? body.challenge.trim() : '';
     const network = typeof body.network === 'string' ? body.network.trim().toLowerCase() : '';
 
@@ -142,10 +202,12 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const tvcRequest = { offer, accept, challenge };
+    const tvcRequest = { offer, accept };
     if (signHex) tvcRequest.signHex = signHex;
     if (network) tvcRequest.network = network;
-    if (expectedOraclePubkey) tvcRequest.policy = { expectedOraclePubkey };
+    if (policy) tvcRequest.policy = policy;
+    tvcRequest.challenge = challenge;
+    const requestDigest = computeRequestDigest(tvcRequest);
 
     const endpoint = getTvcEndpoint();
     const upstream = await fetch(endpoint, {
@@ -168,9 +230,9 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const signedPayload = validateProofEnvelope(envelope, challenge);
+    const signedPayload = validateProofEnvelope(envelope, challenge, requestDigest);
     sendJson(res, 200, {
-      result: signedPayload.result.verification || signedPayload.result,
+      result: signedPayload.result.verification,
       policyResult: signedPayload.result,
       proof: envelope.proof,
       execution: {
@@ -182,13 +244,17 @@ module.exports = async function handler(req, res) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes('too large')
-      ? 413
-      : error?.name === 'TimeoutError' || error?.name === 'AbortError'
-        ? 504
-        : 502;
+    const status =
+      error instanceof ClientInputError
+        ? 400
+        : message.includes('too large')
+          ? 413
+          : error?.name === 'TimeoutError' || error?.name === 'AbortError'
+            ? 504
+            : 502;
     sendJson(res, status, { error: message });
   }
 };
 
 module.exports.validateProofEnvelope = validateProofEnvelope;
+module.exports.computeRequestDigest = computeRequestDigest;

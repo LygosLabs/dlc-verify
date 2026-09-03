@@ -9,6 +9,22 @@ export interface FundingInput {
   sats: string | null;
 }
 
+export interface TransactionOutputInfo {
+  index: number;
+  sats: string;
+  scriptPubKey: string;
+  address: string | null;
+}
+
+export interface CetTransactionInfo {
+  outcome: string;
+  txid: string;
+  locktime: number;
+  outputs: TransactionOutputInfo[];
+}
+
+export type VerificationStatus = 'pass' | 'fail' | 'incomplete';
+
 export interface VerificationResult {
   // Network used to render addresses, and what the offer's chainHash claims
   // (null when the chainHash matches no known network). These can disagree.
@@ -44,6 +60,14 @@ export interface VerificationResult {
   acceptInputs: FundingInput[];
   contractId: string | null;
 
+  // Deterministically reconstructed transaction facts
+  transcriptHash: string;
+  fundOutputIndex: number | null;
+  fundingValueSats: string | null;
+  refundTxId: string | null;
+  refundOutputs: TransactionOutputInfo[];
+  cets: CetTransactionInfo[];
+
   // Adaptor signature verification (cryptographic)
   adaptorSigVerificationAvailable: boolean;
   adaptorSigVerificationNote: string | null;
@@ -53,6 +77,8 @@ export interface VerificationResult {
   adaptorValidCount: number;
   adaptorTotalCount: number;
   adaptorError: string | null;
+  refundSigValid: boolean | null;
+  refundSigError: string | null;
 
   // Sign message verification (when sign hex provided)
   signAvailable: boolean;
@@ -62,6 +88,13 @@ export interface VerificationResult {
   signAdaptorValidCount: number;
   signAdaptorTotalCount: number;
   signAdaptorError: string | null;
+  signRefundSigValid: boolean | null;
+  signRefundSigError: string | null;
+
+  // Fail-closed summary for downstream verification consumers.
+  verificationStatus: VerificationStatus;
+  verificationFailures: string[];
+  verificationIncomplete: string[];
 
   // Errors
   error: string | null;
@@ -77,7 +110,19 @@ export interface AdaptorVerificationResult {
   adaptorTotalCount: number;
   adaptorError: string | null;
   refundSigValid: boolean | null;
+  refundSigError: string | null;
+  signAdaptorValid: boolean | null;
+  signAdaptorValidCount: number;
+  signAdaptorTotalCount: number;
+  signAdaptorError: string | null;
+  signRefundSigValid: boolean | null;
+  signRefundSigError: string | null;
   computedContractId: string | null;
+  fundOutputIndex: number | null;
+  fundingValueSats: string | null;
+  refundTxId: string | null;
+  refundOutputs: TransactionOutputInfo[];
+  cets: CetTransactionInfo[];
 }
 
 export interface VerifyOptions {
@@ -187,6 +232,7 @@ export interface DlcTransactions {
     outputs: Array<{ scriptPubkey?: Buffer; script?: Buffer; value: bigint }>;
   };
   cets: CetInfo[];
+  refund: CetInfo;
 }
 
 export interface CetInfo {
