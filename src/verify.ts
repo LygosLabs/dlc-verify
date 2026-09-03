@@ -1037,7 +1037,12 @@ async function initDdk(): Promise<DdkModule> {
   } else throw new Error(`Unsupported platform for ddk-ts: ${platform}-${arch}`);
 
   const ddkPackageDir = path.dirname(require.resolve('@bennyblader/ddk-ts/package.json'));
-  const candidates = [path.join(ddkPackageDir, '..', packageName, binName), path.join(ddkPackageDir, 'dist', binName)];
+  const candidates = [
+    // ddk-ts >= 0.3.42 publishes native bindings as platform-specific optional packages.
+    path.join(ddkPackageDir, '..', packageName, binName),
+    // ddk-ts <= 0.3.35 shipped native bindings inside the main package dist directory.
+    path.join(ddkPackageDir, 'dist', binName),
+  ];
   const binPath = candidates.find((candidate) => fs.existsSync(candidate));
   if (!binPath) {
     throw new Error(`ddk-ts native binary not found. Checked: ${candidates.join(', ')}`);
