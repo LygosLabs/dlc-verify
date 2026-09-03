@@ -74,6 +74,21 @@ app.post(
       res.status(400).json({ error: 'Missing required fields: offer, accept' });
       return;
     }
+    if (policy !== undefined && (typeof policy !== 'object' || policy === null || Array.isArray(policy))) {
+      res.status(400).json({ error: 'Malformed policy: must be a JSON object' });
+      return;
+    }
+    const outcomes = policy?.expectedLenderOutcomes;
+    if (
+      outcomes !== undefined &&
+      (!Array.isArray(outcomes) ||
+        outcomes.some((o) => typeof o?.outcome !== 'string' || typeof o?.lenderPayoutSats !== 'string'))
+    ) {
+      res.status(400).json({
+        error: 'Malformed policy: expectedLenderOutcomes must be an array of { outcome, lenderPayoutSats } strings',
+      });
+      return;
+    }
 
     try {
       res.json(await verifyDlcAgainstPolicy(offer, accept, signHex, policy, network));
