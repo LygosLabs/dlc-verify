@@ -139,9 +139,18 @@ pnpm start
 ```
 
 The hosted Vercel UI uses `POST /api/verify` as a thin proxy to the Rust verifier
-running in Turnkey Verifiable Cloud. The proxy verifies the Turnkey App Proof,
-checks the per-request challenge, and renders only the result contained in the
-signed proof payload. It does not run the TypeScript verifier on Vercel.
+running in Turnkey Verifiable Cloud. It supports the full policy form described
+above, including direct or derived event IDs. The proxy verifies the Turnkey
+P-256 App Proof signature, pins the verifier version, checks the one-time
+challenge, recomputes the canonical request digest, and renders only the result
+contained in the signed proof payload. It does not run the TypeScript verifier
+on Vercel.
+
+The downloadable proof JSON includes the normalized request, signed policy
+result, App Proof, and execution metadata so the request binding can be checked
+independently. The browser flow does not independently validate the workload's
+Boot Proof or match it to a trusted release policy; that additional check is
+required before treating a result as authorization-grade TEE evidence.
 
 The production Turnkey application is the default target. Self-hosted deployments
 may set `TVC_VERIFIER_URL` to another HTTPS `*.app.turnkey.cloud` application

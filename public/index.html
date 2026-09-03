@@ -455,18 +455,18 @@
             <div class="w-full lg:w-80 space-y-6 shrink-0">
 
                 <!-- TEE Evidence -->
-                <div class="bg-white border border-gray-200 rounded-card overflow-hidden">
-                    <div class="bg-emerald-50 border-b border-emerald-200 px-5 py-3 flex items-center justify-between gap-3">
-                        <h3 class="text-sm font-semibold text-gray-900">Turnkey TEE</h3>
-                        <span id="tvcProofBadge" class="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-medium">
+                <div id="tvcEvidenceCard" class="hidden bg-white border border-gray-200 rounded-card overflow-hidden">
+                    <div class="bg-blue-50 border-b border-blue-200 px-5 py-3 flex items-center justify-between gap-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Turnkey App Proof</h3>
+                        <span id="tvcProofBadge" class="inline-flex items-center gap-1.5 text-blue-700 text-xs font-medium">
                             <i class="ph-fill ph-seal-check"></i>
-                            App Proof attached
+                            Validated by proxy
                         </span>
                     </div>
                     <div class="p-5 space-y-4">
-                        <p class="text-xs text-gray-600 leading-relaxed">The verification ran in Turnkey Verifiable Cloud. The signed App Proof is included in the downloadable evidence.</p>
+                        <p class="text-xs text-gray-600 leading-relaxed">The Vercel proxy validated the P-256 App Proof signature, verifier version, one-time challenge, and digest binding the signed result to this request.</p>
                         <div>
-                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Signed Verdict</div>
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Authorization Verdict</div>
                             <span id="tvcSignedVerdictDisplay" class="font-mono text-sm text-gray-900">-</span>
                         </div>
                         <div>
@@ -484,7 +484,7 @@
                             </div>
                         </div>
                         <button id="downloadTvcEvidenceBtn" class="w-full border border-gray-300 hover:border-gray-400 bg-white text-gray-700 px-3 py-2 rounded-card text-xs font-medium transition-colors" onclick="downloadTvcEvidence()">Download proof JSON</button>
-                        <p class="text-[11px] text-gray-500 leading-relaxed">The App Proof authenticates the result. Authorization-grade use additionally requires checking its exact Boot Proof and trusted release policy.</p>
+                        <p class="text-[11px] text-gray-500 leading-relaxed">This browser flow does not independently validate the workload release or Boot Proof. Authorization-grade use must also match the Boot Proof to a trusted release policy.</p>
                     </div>
                 </div>
 
@@ -864,6 +864,10 @@
             return `dlc-verify-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
         }
 
+        function normalizeMessageHex(value) {
+            return String(value || '').trim().replace(/^0x/i, '').replace(/\s+/g, '');
+        }
+
         function togglePolicyPanel() {
             const toggle = document.getElementById('policyToggle');
             const panel = document.getElementById('policyInputPanel');
@@ -1049,10 +1053,13 @@
         }
 
         async function doVerify() {
-            const offerHex = document.getElementById('offerHex').value.trim();
-            const acceptHex = document.getElementById('acceptHex').value.trim();
-            const signHex = document.getElementById('signHex').value.trim();
+            const offerHex = normalizeMessageHex(document.getElementById('offerHex').value);
+            const acceptHex = normalizeMessageHex(document.getElementById('acceptHex').value);
+            const signHex = normalizeMessageHex(document.getElementById('signHex').value);
             if (!offerHex || !acceptHex) { alert('Please provide both offer and accept hex'); return; }
+
+            lastTvcEvidence = null;
+            document.getElementById('tvcEvidenceCard').classList.add('hidden');
 
             let oracleContext;
             let policy = null;
@@ -1080,8 +1087,8 @@
                 }
                 if (policyEnabled) {
                     payload.policy = policy;
-                } else {
-                    payload.expectedOraclePubkey = oracleContext.expectedPubkey;
+                } else if (oracleContext.expectedPubkey) {
+                    payload.policy = { expectedOraclePubkey: oracleContext.expectedPubkey };
                 }
                 const response = await fetch('/api/verify', {
                     method: 'POST',
@@ -1096,8 +1103,15 @@
                     throw new Error('Verification response did not include Turnkey TEE evidence');
                 }
                 displayResults(envelope.result, oracleContext, policyEnabled ? envelope.policyResult : null);
-                displayTvcEvidence(envelope);
+                if (envelope.result.error) {
+                    lastTvcEvidence = null;
+                    document.getElementById('tvcEvidenceCard').classList.add('hidden');
+                } else {
+                    displayTvcEvidence(envelope, payload);
+                }
             } catch (err) {
+                lastTvcEvidence = null;
+                document.getElementById('tvcEvidenceCard').classList.add('hidden');
                 document.getElementById('errorMessage').textContent = `Error: ${err.message}`;
                 document.getElementById('errorMessage').classList.remove('hidden');
                 document.getElementById('inputSection').classList.add('hidden');
@@ -1109,8 +1123,9 @@
             }
         }
 
-        function displayTvcEvidence(envelope) {
+        function displayTvcEvidence(envelope, request) {
             lastTvcEvidence = {
+                request,
                 execution: envelope.execution,
                 policyResult: envelope.policyResult,
                 proof: envelope.proof,
@@ -1122,6 +1137,7 @@
             document.getElementById('tvcProofKeyDisplay').textContent = truncateHex(publicKey, 18, 12);
             setCopyData('tvcChallengeDisplay', challenge);
             setCopyData('tvcProofKeyDisplay', publicKey);
+            document.getElementById('tvcEvidenceCard').classList.remove('hidden');
             initCopyTriggers();
         }
 
@@ -1403,6 +1419,8 @@
         }
 
         function resetToInput() {
+            lastTvcEvidence = null;
+            document.getElementById('tvcEvidenceCard').classList.add('hidden');
             document.getElementById('inputSection').classList.remove('hidden');
             document.getElementById('resultsSection').classList.add('hidden');
             document.getElementById('headerEditBtn').classList.add('hidden');
