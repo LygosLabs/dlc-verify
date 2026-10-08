@@ -45,8 +45,23 @@ export interface VerificationResult {
   oracleEventId: string | null;
   oracleSigValid: boolean;
   oracleSigError: string | null;
+  // The oracle's signed event must list exactly the contract's outcome strings,
+  // because the adaptor signatures are verified against those strings.
+  oracleEventMatchesContract: boolean | null;
+  oracleEventError: string | null;
+  eventMaturityEpoch: number | null;
   cetLocktime: number | null;
   refundLocktime: number | null;
+  // cetLocktime <= event maturity < refundLocktime, all as Unix times.
+  locktimesValid: boolean | null;
+  locktimeError: string | null;
+  // contract_flags from the offer. Bit 0 sends the whole refund to the accepter.
+  contractFlags: number | null;
+  refundMode: 'each-party' | 'accepter' | null;
+  contractFlagsError: string | null;
+  // Every message must re-serialize to its input bytes with no unknown TLVs.
+  canonicalEncoding: boolean | null;
+  encodingError: string | null;
   feeRatePerVb: string | null;
   offererFundingPubkey: string | null;
   accepterFundingPubkey: string | null;

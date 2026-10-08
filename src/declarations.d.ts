@@ -28,6 +28,9 @@ declare module '@node-dlc/core' {
 declare module '@node-dlc/messaging' {
   export class DlcOffer {
     static deserialize(data: Buffer): DlcOffer;
+    serialize(): Buffer;
+    contractFlags: Buffer;
+    unknownTlvs?: Array<{ type: number; data: Buffer }>;
     chainHash: Buffer;
     fundingPubkey: Buffer;
     changeSpk: Buffer;
@@ -62,6 +65,8 @@ declare module '@node-dlc/messaging' {
 
   export class DlcAccept {
     static deserialize(data: Buffer): DlcAccept;
+    serialize(): Buffer;
+    unknownTlvs?: Array<{ type: number; data: Buffer }>;
     temporaryContractId: Buffer;
     fundingPubkey: Buffer;
     changeSpk: Buffer;
@@ -90,6 +95,10 @@ declare module '@node-dlc/messaging' {
     outcomes: Array<{ outcome: string; localPayout: bigint }>;
   }
 
+  export class EnumEventDescriptor {
+    outcomes: string[];
+  }
+
   export class NumericalDescriptor {
     numDigits: number;
   }
@@ -109,6 +118,7 @@ declare module '@node-dlc/messaging' {
       eventId?: string;
       eventMaturityEpoch?: number;
       oracleNonces: Buffer[];
+      eventDescriptor?: unknown;
     };
     announcementSig: Buffer;
     getEventId?(): string;
