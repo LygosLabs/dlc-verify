@@ -18,6 +18,7 @@ const {
   DlcSign,
   OracleAttestation,
   EnumeratedDescriptor,
+  EnumEventDescriptor,
   NumericalDescriptor,
   SingleOracleInfo,
   MultiOracleInfo,
@@ -42,6 +43,10 @@ import type {
 } from './types';
 
 const LOCKTIME_THRESHOLD = 500000000;
+
+/** Bit 0 of the offer's contract_flags: DDK sends the whole refund to the accepter. */
+const REFUND_TO_ACCEPTER_FLAG = 0x01;
+const SUPPORTED_CONTRACT_FLAGS = REFUND_TO_ACCEPTER_FLAG;
 
 const HELP_TEXT = `
 DLC Verify - Cryptographic DLC verification tool
@@ -122,10 +127,14 @@ function finalizeVerificationStatus(result: VerificationResult, signRequested: b
   const incomplete: string[] = [];
 
   if (result.error) failures.push('message-parsing-or-reconstruction-failed');
+  if (result.canonicalEncoding !== true) failures.push('non-canonical-message-encoding');
+  if (result.contractFlagsError !== null) failures.push('unsupported-contract-flags');
   if (result.expectedOraclePubkey !== null && result.oraclePubkeyMatchesExpected !== true) {
     failures.push('oracle-pubkey-mismatch-or-unavailable');
   }
   if (!result.oracleSigValid) failures.push('oracle-announcement-signature-invalid');
+  if (result.oracleEventMatchesContract !== true) failures.push('oracle-event-outcomes-mismatch-or-unavailable');
+  if (result.locktimesValid !== true) failures.push('locktimes-invalid-or-unavailable');
   if (!result.adaptorSigVerificationAvailable) failures.push('accepter-adaptor-verification-unavailable');
   else if (result.adaptorValid !== true) failures.push('accepter-adaptor-signatures-invalid');
   if (result.refundSigValid !== true) failures.push('accepter-refund-signature-invalid-or-unavailable');
@@ -143,6 +152,91 @@ function finalizeVerificationStatus(result: VerificationResult, signRequested: b
   result.verificationFailures = [...new Set(failures)];
   result.verificationIncomplete = [...new Set(incomplete)];
   result.verificationStatus = failures.length > 0 ? 'fail' : incomplete.length > 0 ? 'incomplete' : 'pass';
+}
+
+function normalizeMessageHex(value: string): string {
+  return value.trim().toLowerCase().replace(/^0x/, '').replace(/\s+/g, '');
+}
+
+// Every byte of a message has to be accounted for by a field the verifier
+// understands. node-dlc keeps unknown TLV records and writes them back out, so
+// bytes appended to a message would otherwise go unnoticed while changing the
+// transcript hash of an otherwise identical contract.
+function checkCanonicalEncoding(label: string, message: any, inputHex: string): string | null {
+  if (message.unknownTlvs?.length) {
+    return `${label} carries ${message.unknownTlvs.length} unknown TLV record(s)`;
+  }
+  const reserialized = message.serialize().toString('hex');
+  if (reserialized !== normalizeMessageHex(inputHex)) {
+    return `${label} does not re-serialize to its input bytes (non-canonical encoding)`;
+  }
+  return null;
+}
+
+interface ContractFlagsInfo {
+  flags: number;
+  refundMode: 'each-party' | 'accepter';
+  error: string | null;
+}
+
+function readContractFlags(offer: any): ContractFlagsInfo {
+  const flags = Buffer.isBuffer(offer.contractFlags) && offer.contractFlags.length > 0 ? offer.contractFlags[0] : 0;
+  const unknownBits = flags & ~SUPPORTED_CONTRACT_FLAGS;
+  return {
+    flags,
+    refundMode: flags & REFUND_TO_ACCEPTER_FLAG ? 'accepter' : 'each-party',
+    error: unknownBits !== 0 ? `unsupported contract_flags 0x${flags.toString(16).padStart(2, '0')}` : null,
+  };
+}
+
+// The adaptor signatures are verified against the contract's outcome strings,
+// so the oracle must have committed to exactly those strings. Any other
+// outcome has a CET that no attestation the oracle will publish can unlock.
+function checkOracleEventAgainstContract(
+  descriptor: any,
+  announcement: OracleAnnouncementResult | null,
+): string | null {
+  if (!announcement) return 'no oracle announcement in the offer';
+  if (!(descriptor instanceof EnumeratedDescriptor)) return 'only enumerated contract descriptors are supported';
+  const event = announcement.oracleEvent;
+  if (!(event.eventDescriptor instanceof EnumEventDescriptor)) return 'oracle event is not an enumerated event';
+  if (event.oracleNonces.length !== 1) {
+    return `enumerated events need exactly one nonce, the announcement has ${event.oracleNonces.length}`;
+  }
+  const contract: string[] = descriptor.outcomes.map((o: { outcome: string }) => o.outcome);
+  const announced: string[] = (event.eventDescriptor as { outcomes: string[] }).outcomes;
+  if (contract.length === 0) return 'contract has no outcomes';
+  if (contract.some((o) => o.length === 0)) return 'contract has an empty outcome label';
+  if (new Set(contract).size !== contract.length) return 'contract outcomes are not unique';
+  if (new Set(announced).size !== announced.length) return 'announced outcomes are not unique';
+  if (contract.length !== announced.length) {
+    return `contract has ${contract.length} outcomes, the signed announcement has ${announced.length}`;
+  }
+  const announcedSet = new Set(announced);
+  const missing = contract.filter((o) => !announcedSet.has(o));
+  if (missing.length > 0) {
+    return `contract outcomes not in the signed announcement: ${missing.map((o) => JSON.stringify(o)).join(', ')}`;
+  }
+  return null;
+}
+
+// The oracle's maturity is a Unix time, so the locktimes compared with it must
+// be Unix times too. A refund before maturity or a CET after it changes who
+// can take the collateral and when, whatever the signatures say.
+function checkLocktimes(cetLocktime: number, refundLocktime: number, eventMaturityEpoch: number | null): string | null {
+  const cetIsTime = cetLocktime >= LOCKTIME_THRESHOLD;
+  const refundIsTime = refundLocktime >= LOCKTIME_THRESHOLD;
+  if (cetIsTime !== refundIsTime) return 'cetLocktime and refundLocktime are not in the same units';
+  if (cetLocktime >= refundLocktime) return `cetLocktime ${cetLocktime} is not before refundLocktime ${refundLocktime}`;
+  if (eventMaturityEpoch === null) return 'oracle event maturity is unavailable';
+  if (!cetIsTime) return 'block-height locktimes cannot be compared with the oracle maturity time';
+  if (cetLocktime > eventMaturityEpoch) {
+    return `cetLocktime ${cetLocktime} is after oracle event maturity ${eventMaturityEpoch}`;
+  }
+  if (refundLocktime <= eventMaturityEpoch) {
+    return `refundLocktime ${refundLocktime} is not after oracle event maturity ${eventMaturityEpoch}`;
+  }
+  return null;
 }
 
 function parseCliArgs(args: string[]): CliArgs {
@@ -224,8 +318,18 @@ export async function verifyDlc(
     oracleEventId: null,
     oracleSigValid: false,
     oracleSigError: null,
+    oracleEventMatchesContract: null,
+    oracleEventError: null,
+    eventMaturityEpoch: null,
     cetLocktime: null,
     refundLocktime: null,
+    locktimesValid: null,
+    locktimeError: null,
+    contractFlags: null,
+    refundMode: null,
+    contractFlagsError: null,
+    canonicalEncoding: null,
+    encodingError: null,
     feeRatePerVb: null,
     offererFundingPubkey: null,
     accepterFundingPubkey: null,
@@ -286,6 +390,17 @@ export async function verifyDlc(
     if (!offer.temporaryContractId.equals(accept.temporaryContractId)) {
       throw new Error('Offer and Accept temporary contract IDs do not match');
     }
+
+    const flagInfo = readContractFlags(offer);
+    result.contractFlags = flagInfo.flags;
+    result.refundMode = flagInfo.refundMode;
+    result.contractFlagsError = flagInfo.error;
+    if (flagInfo.error) log(flagInfo.error);
+
+    const encodingErrors = [
+      checkCanonicalEncoding('offer', offer, offerHex),
+      checkCanonicalEncoding('accept', accept, acceptHex),
+    ].filter((e): e is string => e !== null);
 
     const contract = extractContractInfo(offer.contractInfo);
     const descriptor = contract.descriptor;
@@ -364,6 +479,18 @@ export async function verifyDlc(
     result.oraclePubkeySource = expectedOraclePubkey ? 'provided' : 'derived';
     result.oraclePubkeyMatchesExpected = expectedOraclePubkey ? expectedOraclePubkey === extractedOraclePubkey : null;
     result.oracleEventId = oracleAnnouncement?.getEventId?.() || oracleAnnouncement?.oracleEvent?.eventId || null;
+    const maturity =
+      oracleAnnouncement?.getEventMaturityEpoch?.() ?? oracleAnnouncement?.oracleEvent?.eventMaturityEpoch;
+    result.eventMaturityEpoch = maturity ? maturity : null;
+
+    // The signed event must describe exactly this contract's outcomes, and the
+    // locktimes must bracket its maturity.
+    result.oracleEventError = checkOracleEventAgainstContract(descriptor, oracleAnnouncement);
+    result.oracleEventMatchesContract = result.oracleEventError === null;
+    if (result.oracleEventError) log(`oracle event does not match the contract: ${result.oracleEventError}`);
+    result.locktimeError = checkLocktimes(offer.cetLocktime, offer.refundLocktime, result.eventMaturityEpoch);
+    result.locktimesValid = result.locktimeError === null;
+    if (result.locktimeError) log(`locktimes invalid: ${result.locktimeError}`);
 
     // Oracle signature verification
     if (oracleAnnouncement) {
@@ -409,6 +536,8 @@ export async function verifyDlc(
         signMessage = DlcSign.deserialize(Buffer.from(options.signHex, 'hex'));
         result.signAvailable = true;
         result.signContractId = signMessage.contractId.toString('hex');
+        const signEncodingError = checkCanonicalEncoding('sign', signMessage, options.signHex);
+        if (signEncodingError) encodingErrors.push(signEncodingError);
       } catch (signErr) {
         const message = `Failed to parse sign message: ${(signErr as Error).message}`;
         result.signAdaptorError = message;
@@ -416,6 +545,9 @@ export async function verifyDlc(
         log(`sign parse FAILED: ${(signErr as Error).message}`);
       }
     }
+    result.canonicalEncoding = encodingErrors.length === 0;
+    result.encodingError = encodingErrors.length > 0 ? encodingErrors.join('; ') : null;
+    if (result.encodingError) log(`non-canonical encoding: ${result.encodingError}`);
 
     // Adaptor and refund signature verification
     log('invoking adaptor signature verification');
@@ -427,6 +559,7 @@ export async function verifyDlc(
       oracleAnnouncement,
       signMessage,
       network,
+      flagInfo,
       options.logPrefix,
     );
     log(
@@ -481,6 +614,12 @@ export async function verifyDlc(
 /**
  * Execute a CET using oracle attestation — produces a broadcastable transaction.
  * Requires offer, accept, sign, and attestation hex.
+ *
+ * The transcript must verify first, and the attestation must come from the
+ * announced oracle, use the announced nonce, sign one of the contract's
+ * outcomes, and decrypt both adaptor signatures into signatures that verify
+ * against the CET. Anything else throws rather than returning a transaction
+ * the network would reject.
  */
 export async function executeCet(
   offerHex: string,
@@ -488,32 +627,70 @@ export async function executeCet(
   signHex: string,
   attestationHex: string,
 ): Promise<CetExecutionResult> {
+  const verification = await verifyDlc(offerHex, acceptHex, { signHex });
+  if (verification.verificationStatus !== 'pass') {
+    const reasons = [...verification.verificationFailures, ...verification.verificationIncomplete];
+    throw new Error(
+      `Refusing to build a settlement for a transcript that does not verify: ${reasons.join(', ')}` +
+        (verification.error ? ` (${verification.error})` : ''),
+    );
+  }
+
   const ddk = await initDdk();
   const offer = DlcOffer.deserialize(Buffer.from(offerHex, 'hex'));
   const accept = DlcAccept.deserialize(Buffer.from(acceptHex, 'hex'));
   const sign = DlcSign.deserialize(Buffer.from(signHex, 'hex'));
   const attestation = OracleAttestation.deserialize(Buffer.from(attestationHex, 'hex'));
 
-  const attestedOutcome = attestation.outcomes[0];
-  if (!attestedOutcome) {
-    throw new Error('Oracle attestation contains no outcomes');
-  }
-
-  // Find outcome index matching attestation
   const contract = extractContractInfo(offer.contractInfo);
   const descriptor = contract.descriptor;
   if (!(descriptor instanceof EnumeratedDescriptor)) {
     throw new Error('CET execution currently supports EnumeratedDescriptor contracts only');
   }
+  const announcement = extractOracleAnnouncement(contract.oracleInfo);
+  if (!announcement) {
+    throw new Error('Offer carries no oracle announcement');
+  }
 
-  const outcomeIndex = descriptor.outcomes.findIndex((o: { outcome: string }) => {
-    if (o.outcome === attestedOutcome) return true;
-    const hash = crypto.createHash('sha256').update(Buffer.from(attestedOutcome, 'utf8')).digest('hex');
-    return o.outcome === hash;
-  });
+  // Attestation checks: oracle key, announced nonce, event, signature.
+  if (attestation.outcomes.length !== 1 || attestation.signatures.length !== 1) {
+    throw new Error(
+      `Expected one attested outcome and one signature, got ${attestation.outcomes.length} and ${attestation.signatures.length}`,
+    );
+  }
+  const attestedOutcome: string = attestation.outcomes[0];
+  const attestationSig: Buffer = attestation.signatures[0];
+  if (
+    !Buffer.isBuffer(attestation.oraclePublicKey) ||
+    !attestation.oraclePublicKey.equals(announcement.oraclePublicKey)
+  ) {
+    throw new Error('Attestation oracle public key does not match the announcement');
+  }
+  if (attestationSig.length !== 64) {
+    throw new Error(`Attestation signature must be 64 bytes, got ${attestationSig.length}`);
+  }
+  const announcedNonce = announcement.oracleEvent.oracleNonces[0];
+  if (!announcedNonce || !attestationSig.subarray(0, 32).equals(announcedNonce)) {
+    throw new Error('Attestation nonce does not match the announced nonce');
+  }
+  const announcedEventId = announcement.getEventId?.() ?? announcement.oracleEvent.eventId ?? '';
+  if (attestation.eventId && announcedEventId && attestation.eventId !== announcedEventId) {
+    throw new Error(`Attestation event ID "${attestation.eventId}" does not match the announcement`);
+  }
+  try {
+    verify(announcement.oraclePublicKey, getTaggedOutcomeHash(attestedOutcome), attestationSig);
+  } catch (e) {
+    throw new Error(`Attestation signature is invalid for outcome "${attestedOutcome}": ${(e as Error).message}`);
+  }
+
+  const outcomeIndex = descriptor.outcomes.findIndex((o: { outcome: string }) => o.outcome === attestedOutcome);
   if (outcomeIndex === -1) {
     const available = descriptor.outcomes.map((o: { outcome: string }) => o.outcome).join(', ');
     throw new Error(`Attestation outcome "${attestedOutcome}" not found in contract outcomes: [${available}]`);
+  }
+  const flagInfo = readContractFlags(offer);
+  if (flagInfo.error) {
+    throw new Error(flagInfo.error);
   }
 
   // Rebuild DLC transactions via DDK
@@ -590,7 +767,7 @@ export async function executeCet(
     0,
     offerTyped.cetLocktime,
     BigInt(offerTyped.fundOutputSerialId),
-    0,
+    flagInfo.flags,
   );
 
   if (outcomeIndex >= dlcTxs.cets.length) {
@@ -642,6 +819,36 @@ export async function executeCet(
   if (!p2ms.output) {
     throw new Error('Failed to create multisig witness script');
   }
+
+  // The decrypted signatures must verify against the CET before the result is
+  // called broadcastable; a wrong attestation decrypts to noise.
+  const { fundingScript, fundingScriptPubKey } = getFundingScriptAndScriptPubKey(offerPubkey, acceptPubkey);
+  const fundOutput = dlcTxs.fund.outputs.find((output: { scriptPubkey?: Buffer; script?: Buffer }) =>
+    fundingScriptPubKey ? Buffer.from(output.scriptPubkey ?? output.script ?? []).equals(fundingScriptPubKey) : false,
+  );
+  if (!fundingScript || !fundOutput) {
+    throw new Error('Could not locate fund output in reconstructed funding transaction');
+  }
+  const sighash = cetTx.hashForWitnessV0(0, fundingScript, fundOutput.value, bitcoin.Transaction.SIGHASH_ALL);
+  for (const [derSig, pubkey, who] of [
+    [offerRealSig, offerPubkey, 'offerer'],
+    [acceptRealSig, acceptPubkey, 'accepter'],
+  ] as const) {
+    let compact: Uint8Array;
+    try {
+      compact = secp256k1.signatureImport(derSig);
+    } catch {
+      throw new Error(
+        `Decrypted ${who} signature is not a valid DER signature; the attestation does not unlock this outcome`,
+      );
+    }
+    if (!secp256k1.ecdsaVerify(compact, sighash, pubkey)) {
+      throw new Error(
+        `Decrypted ${who} signature does not verify against the CET; the attestation does not unlock this outcome`,
+      );
+    }
+  }
+
   cetTx.ins[0].witness = [Buffer.alloc(0), sortedSigs[0], sortedSigs[1], p2ms.output];
 
   return {
@@ -713,7 +920,13 @@ function extractContractInfo(contractInfo: any): ContractInfo {
 
 interface OracleAnnouncementResult {
   oraclePublicKey: Buffer;
-  oracleEvent: { serialize: () => Buffer; eventId?: string; eventMaturityEpoch?: number; oracleNonces: Buffer[] };
+  oracleEvent: {
+    serialize: () => Buffer;
+    eventId?: string;
+    eventMaturityEpoch?: number;
+    oracleNonces: Buffer[];
+    eventDescriptor?: unknown;
+  };
   announcementSig: Buffer;
   getEventId?: () => string;
   getEventMaturityEpoch?: () => number;
@@ -1118,6 +1331,7 @@ async function verifyAdaptorSignatures(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sign: any | null,
   network: bitcoin.Network,
+  flagInfo: ContractFlagsInfo,
   logPrefix?: string,
 ): Promise<AdaptorVerificationResult> {
   const log = (msg: string): void => {
@@ -1152,6 +1366,9 @@ async function verifyAdaptorSignatures(
   try {
     const ddk = await initDdk();
     log('DDK initialized');
+    if (flagInfo.error) {
+      throw new Error(flagInfo.error);
+    }
     if (!(descriptor instanceof EnumeratedDescriptor)) {
       throw new Error('Adaptor signature verification currently supports EnumeratedDescriptor contracts only');
     }
@@ -1248,9 +1465,11 @@ async function verifyAdaptorSignatures(
       0,
       offerTyped.cetLocktime,
       BigInt(offerTyped.fundOutputSerialId),
-      0,
+      flagInfo.flags,
     );
-    log(`DDK built fund tx + ${dlcTxs.cets.length} CETs`);
+    log(
+      `DDK built fund tx + ${dlcTxs.cets.length} CETs (contract_flags=${flagInfo.flags}, refund to ${flagInfo.refundMode})`,
+    );
 
     // Compute fund txid from DDK-built fund transaction
     const fundTxId = crypto
@@ -1503,6 +1722,7 @@ async function main(): Promise<void> {
     }
   }
 
+  const flagInfo = readContractFlags(offer);
   const adaptorResult = await verifyAdaptorSignatures(
     offer,
     accept,
@@ -1511,7 +1731,14 @@ async function main(): Promise<void> {
     oracleAnnouncement,
     null,
     network,
+    flagInfo,
   );
+  // The structured verdict carries the checks the report lines below summarise.
+  const full = await verifyDlc(offerHex, acceptHex, {
+    expectedOraclePubkey: normalizedExpectedOraclePubkey || undefined,
+    signHex: signHex || undefined,
+    network: cliNetwork,
+  });
   const singleFundedComputation = tryComputeContractIdFromSingleFunded(
     offer as Parameters<typeof tryComputeContractIdFromSingleFunded>[0],
     accept as Parameters<typeof tryComputeContractIdFromSingleFunded>[1],
@@ -1573,6 +1800,20 @@ async function main(): Promise<void> {
     `Loan maturity date: ${locktimeToHuman(offer.cetLocktime)}${eventMaturityEpoch ? ` (oracle event maturity: ${locktimeToHuman(eventMaturityEpoch)})` : ''}`,
   );
   lines.push(`Refund locktime: ${locktimeToHuman(offer.refundLocktime)}`);
+  lines.push(
+    `Refund mode: ${
+      flagInfo.error
+        ? `UNSUPPORTED (${flagInfo.error})`
+        : flagInfo.refundMode === 'accepter'
+          ? 'all collateral to the accepter (contract_flags 0x01)'
+          : 'each party gets its collateral back (contract_flags 0x00)'
+    }`,
+  );
+  lines.push(`Locktime ordering: ${full.locktimesValid ? 'valid' : `INVALID (${full.locktimeError})`}`);
+  lines.push(
+    `Oracle event outcomes: ${full.oracleEventMatchesContract ? 'match the contract' : `MISMATCH (${full.oracleEventError})`}`,
+  );
+  lines.push(`Message encoding: ${full.canonicalEncoding ? 'canonical' : `NON-CANONICAL (${full.encodingError})`}`);
   lines.push(`Fee rate: ${offer.feeRatePerVb.toString()} sat/vB`);
   lines.push('');
   lines.push(`Offerer funding pubkey: ${offer.fundingPubkey.toString('hex')}`);
@@ -1598,11 +1839,14 @@ async function main(): Promise<void> {
   }
   lines.push('');
   lines.push(`Contract ID (computed): ${computedContractId}`);
-  if (singleFundedComputation) {
-    lines.push(`Contract ID (computed, internal-txid convention): ${singleFundedComputation.cidInternalTxid}`);
-    lines.push(`Reconstructed fund TX ID (single-funded model): ${singleFundedComputation.fundTxId}`);
-    lines.push(`Reconstructed fund output index: ${singleFundedComputation.fundOutputIndex}`);
-    lines.push(`Estimated fund tx fee: ${singleFundedComputation.fee} sats`);
+  // The single-funded model is an estimate that does not use DDK's fee rules;
+  // its txid differs from the one the signatures commit to. Only show it when
+  // the authoritative reconstruction is unavailable.
+  if (singleFundedComputation && !adaptorResult.available) {
+    lines.push(`Contract ID (estimate, internal-txid convention): ${singleFundedComputation.cidInternalTxid}`);
+    lines.push(`Fund TX ID (estimate, single-funded model; not authoritative): ${singleFundedComputation.fundTxId}`);
+    lines.push(`Fund output index (estimate): ${singleFundedComputation.fundOutputIndex}`);
+    lines.push(`Fund tx fee (estimate): ${singleFundedComputation.fee} sats`);
   }
 
   lines.push('');
@@ -1634,11 +1878,7 @@ async function main(): Promise<void> {
 
   // Sign message verification (CLI)
   if (signHex) {
-    const signResult = await verifyDlc(offerHex, acceptHex, {
-      expectedOraclePubkey: normalizedExpectedOraclePubkey || undefined,
-      signHex,
-      network: cliNetwork,
-    });
+    const signResult = full;
     lines.push('');
     lines.push('Sign message verification:');
     lines.push(`  Sign contract ID: ${signResult.signContractId || 'n/a'}`);
@@ -1665,8 +1905,12 @@ async function main(): Promise<void> {
     } else {
       lines.push('  Sign refund signature: not verified');
     }
-    lines.push(`  Overall verification status: ${signResult.verificationStatus.toUpperCase()}`);
   }
+
+  lines.push('');
+  lines.push(`Overall verification status: ${full.verificationStatus.toUpperCase()}`);
+  if (full.verificationFailures.length > 0) lines.push(`  Failures: ${full.verificationFailures.join(', ')}`);
+  if (full.verificationIncomplete.length > 0) lines.push(`  Incomplete: ${full.verificationIncomplete.join(', ')}`);
 
   // CET execution (when attestation provided)
   if (attestationHex && signHex) {

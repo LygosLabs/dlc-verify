@@ -45,11 +45,24 @@ DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer`
 - All outcome payouts (e.g. `repaid`, `liquidated-by-price-threshold`)
 - Oracle public key and event ID
 - Oracle announcement Schnorr signature validity
-- CET maturity and refund locktime
+- The oracle's signed event lists exactly the contract's outcome strings (an enumerated event with one
+  nonce). The adaptor signatures are verified against the contract's strings, so an outcome the oracle
+  never committed to would have a CET no attestation can unlock.
+- CET locktime, refund locktime and oracle maturity are Unix times with
+  `cetLocktime <= maturity < refundLocktime`
+- `contract_flags`: `0x00` (each party gets its collateral back on refund) or `0x01` (the whole refund
+  goes to the accepter). The refund transaction is reconstructed under the signed flag and the refund
+  mode is reported; any other bit fails verification.
+- Every message re-serializes to its input bytes with no unknown TLV records, so the transcript hash
+  cannot be changed by appending data
 - Fee rate
 - Both parties' funding pubkeys and the reconstructed 2-of-2 P2WSH address
 - Funding inputs from offerer and accepter
 - Contract ID (computed, both RPC and internal-txid conventions)
+
+Each of these contributes a `verificationFailures` identifier when it fails
+(`oracle-event-outcomes-mismatch-or-unavailable`, `locktimes-invalid-or-unavailable`,
+`unsupported-contract-flags`, `non-canonical-message-encoding`), so `verificationStatus` is `fail`.
 
 ### Adaptor signature verification (cryptographic)
 
@@ -111,7 +124,12 @@ Bitcoin block inclusion and unspent-output checks intentionally remain outside t
 
 When provided with an oracle attestation in addition to offer/accept/sign, the tool can produce a **fully signed, broadcastable CET transaction**. This is the "escape hatch" — if the platform goes down, a party with their DLC messages and the oracle attestation can settle the contract independently on-chain.
 
-- Decrypts both parties' adaptor signatures using the oracle's attestation scalar
+- Refuses unless the full offer/accept/sign transcript verifies (`verificationStatus: "pass"`)
+- Checks the attestation before using it: same oracle public key as the announcement, the announced
+  nonce, the announced event ID, a valid BIP340 signature over the attested outcome, and an outcome
+  that is one of the contract's
+- Decrypts both parties' adaptor signatures using the oracle's attestation scalar and verifies the
+  resulting ECDSA signatures against the CET before returning it
 - Builds the 2-of-2 multisig witness and produces a broadcastable transaction hex
 - Available via CLI (`--attestation <hex>`) and API (`POST /api/execute`)
 
