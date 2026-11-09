@@ -1,0 +1,6 @@
+# lygos-loan terms for examples/testnet-loan-118c9fc9.json, a Lygos testnet loan:
+#   dlc-verify verify examples/testnet-loan-118c9fc9.json --profile lygos-loan \
+#     --terms fixtures/terms/testnet-loan-118c9fc9.toml
+collateral_sat = 8000
+oracle = "magnolia-testnet"
+maturity = 1779120000              # 2026-05-18T16:00:00Z

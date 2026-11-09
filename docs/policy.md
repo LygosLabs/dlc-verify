@@ -20,6 +20,8 @@ a term that is silently ignored.
 Every field except `schema` is optional. A policy only checks what it states: leave a field out
 and its check does not run. Worked examples are in [`fixtures/policies`](../fixtures/policies).
 
+For Lygos loans, a [profile](profiles.md) builds the policy from a short terms file.
+
 ## Example
 
 ```toml

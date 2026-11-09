@@ -70,7 +70,7 @@ witness could not be checked; otherwise `pass`.
 - [x] 4. Rebuild and all structure, oracle, locktime and signature checks
 - [x] 5. Report with payee table, text and JSON output, `verify` command
 - [x] 6. Policy engine and policy files
-- [ ] 7. Oracle registry, `lygos-loan` and `lygos-midnight` profiles
+- [x] 7. Oracle registry, `lygos-loan` and `lygos-midnight` profiles
 - [ ] 8. Keyless `settle` and `refund`
 - [ ] 9. WASM build
 - [ ] 10. Web UI verifying in the browser

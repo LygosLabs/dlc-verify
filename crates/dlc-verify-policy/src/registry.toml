@@ -1,0 +1,38 @@
+# Oracle public keys dlc-verify knows by name.
+#
+# Each [[oracle]] entry has:
+#   name         the name profiles and `--terms` files use
+#   provider     who runs the oracle
+#   pubkey       the oracle's 32-byte x-only public key, hex
+#   profiles     the profiles that trust this key when the terms name no oracle
+#   network      optional: the network the oracle attests for
+#   quarter      optional, Midnight only: the UTC calendar quarter (YYYYQn) of the market
+#                maturities this key signs. Midnight uses one key per quarter.
+#   description  optional
+#
+# Midnight keys are published per quarter and are not listed yet. Until they are, pass the key
+# with `oracle_pubkeys` in the lygos-midnight terms.
+
+[[oracle]]
+name = "magnolia-mainnet"
+provider = "magnolia"
+pubkey = "8731249d979def2d5d76c61795969e953807d37ff36ef8dbab60d57ae08bb004"
+profiles = ["lygos-loan"]
+network = "mainnet"
+description = "Magnolia loan oracle, production"
+
+[[oracle]]
+name = "magnolia-testnet"
+provider = "magnolia"
+pubkey = "dde465c101a1aaa5a88c0d35d21744eb5352c62b7c7665d62d5f20c770ddfd8f"
+profiles = ["lygos-loan"]
+network = "testnet4"
+description = "Magnolia loan oracle, testnet"
+
+[[oracle]]
+name = "chainlink-testnet4"
+provider = "chainlink"
+pubkey = "03e40252588ea11d87d1e7afc8df27954ea1dd8a52f201a281caef4678f65887"
+profiles = ["lygos-loan"]
+network = "testnet4"
+description = "Chainlink loan oracle, testnet4"

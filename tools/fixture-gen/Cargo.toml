@@ -16,6 +16,7 @@ ddk-dlc = { workspace = true }
 ddk-manager = { workspace = true }
 ddk-messages = { workspace = true }
 ddk-trie = { workspace = true }
+dlc-verify-policy = { workspace = true }
 hex = { workspace = true }
 lightning = { workspace = true }
 serde_json = { workspace = true }

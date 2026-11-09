@@ -1,0 +1,117 @@
+[
+  {
+    "name": "first-mint-two-liquidators",
+    "chainId": 8453,
+    "originator": "0xAAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa",
+    "marketId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "requestId": "0f8b7c2e-4d1a-4e6b-9c3f-2a5d8e7b1c40",
+    "liquidators": [
+      "0xCCcCCccCcCCCcCcCcCcCCCCcccCcCcCcccCCCcCc",
+      "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+    ],
+    "controller": "0xdDdDddDdDdddDDddDDddDDDDdDdDDdDDdDDDDDdD",
+    "mintDeadline": 1790000000,
+    "announcedAt": 1788000000,
+    "maturity": 1798210800,
+    "expectedPreimage": "lygos-midnight-v1//8453//0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa//0x1111111111111111111111111111111111111111111111111111111111111111//0f8b7c2e-4d1a-4e6b-9c3f-2a5d8e7b1c40//0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,0xcccccccccccccccccccccccccccccccccccccccc//0xdddddddddddddddddddddddddddddddddddddddd//1790000000//1788000000",
+    "expectedEventId": "midnight-25DEC26-5789bb5382dafd8138bf098d1f45852bcefad47e7ba1fa55c63767a20f003669",
+    "expectedOutcomes": [
+      "not-minted",
+      "released",
+      "liquidated-by-0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "liquidated-by-0xcccccccccccccccccccccccccccccccccccccccc"
+    ]
+  },
+  {
+    "name": "same-terms-other-request",
+    "chainId": 8453,
+    "originator": "0xAAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa",
+    "marketId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "requestId": "ffffffff-ffff-4fff-bfff-ffffffffffff",
+    "liquidators": [
+      "0xCCcCCccCcCCCcCcCcCcCCCCcccCcCcCcccCCCcCc",
+      "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+    ],
+    "controller": "0xdDdDddDdDdddDDddDDddDDDDdDdDDdDDdDDDDDdD",
+    "mintDeadline": 1790000000,
+    "announcedAt": 1788000000,
+    "maturity": 1798210800,
+    "expectedPreimage": "lygos-midnight-v1//8453//0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa//0x1111111111111111111111111111111111111111111111111111111111111111//ffffffff-ffff-4fff-bfff-ffffffffffff//0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,0xcccccccccccccccccccccccccccccccccccccccc//0xdddddddddddddddddddddddddddddddddddddddd//1790000000//1788000000",
+    "expectedEventId": "midnight-25DEC26-e7d5ce48eccb80a3504342fd790024170f83c4d9956ad7f208f81b201a5ee350",
+    "expectedOutcomes": [
+      "not-minted",
+      "released",
+      "liquidated-by-0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "liquidated-by-0xcccccccccccccccccccccccccccccccccccccccc"
+    ]
+  },
+  {
+    "name": "successor-single-liquidator",
+    "successor": true,
+    "chainId": 8453,
+    "originator": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "marketId": "2222222222222222222222222222222222222222222222222222222222222222",
+    "requestId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "liquidators": [
+      "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "controller": "0xdddddddddddddddddddddddddddddddddddddddd",
+    "mintDeadline": 0,
+    "announcedAt": 1797000000,
+    "maturity": 1806073200,
+    "expectedPreimage": "lygos-midnight-v1//8453//0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa//0x2222222222222222222222222222222222222222222222222222222222222222//7c9e6679-7425-40de-944b-e07fc1f90ae7//0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb//0xdddddddddddddddddddddddddddddddddddddddd//0//1797000000",
+    "expectedEventId": "midnight-26MAR27-ed46ea80c3d248e08e827b84e4b052b4df2f5f03bc0b2f6c97bc2bde9a1b0861",
+    "expectedOutcomes": [
+      "released",
+      "liquidated-by-0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+  },
+  {
+    "name": "testnet-three-liquidators",
+    "chainId": 84532,
+    "originator": "0x1234567890abcdef1234567890abcdef12345678",
+    "marketId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "requestId": "00000000-0000-4000-8000-000000000000",
+    "liquidators": [
+      "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+      "0x0000000000000000000000000000000000000001",
+      "0x9999999999999999999999999999999999999999"
+    ],
+    "controller": "0x00112233445566778899aabbccddeeff00112233",
+    "mintDeadline": 1795000000,
+    "announcedAt": 1789000000,
+    "maturity": 1813935600,
+    "expectedPreimage": "lygos-midnight-v1//84532//0x1234567890abcdef1234567890abcdef12345678//0x3333333333333333333333333333333333333333333333333333333333333333//00000000-0000-4000-8000-000000000000//0x0000000000000000000000000000000000000001,0x9999999999999999999999999999999999999999,0xffffffffffffffffffffffffffffffffffffffff//0x00112233445566778899aabbccddeeff00112233//1795000000//1789000000",
+    "expectedEventId": "midnight-25JUN27-cccdd88e0b0f9333621f7981d9273f65175849839726b7cf28eb1be97d619fb2",
+    "expectedOutcomes": [
+      "not-minted",
+      "released",
+      "liquidated-by-0x0000000000000000000000000000000000000001",
+      "liquidated-by-0x9999999999999999999999999999999999999999",
+      "liquidated-by-0xffffffffffffffffffffffffffffffffffffffff"
+    ]
+  },
+  {
+    "name": "enclave-layout",
+    "chainId": 8453,
+    "originator": "0x5656565656565656565656565656565656565656",
+    "marketId": "0xabababababababababababababababababababababababababababababababab",
+    "requestId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "liquidators": [
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "0xcccccccccccccccccccccccccccccccccccccccc"
+    ],
+    "controller": "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+    "mintDeadline": 1790000000,
+    "announcedAt": 1789000000,
+    "maturity": 1798156800,
+    "expectedPreimage": "lygos-midnight-v1//8453//0x5656565656565656565656565656565656565656//0xabababababababababababababababababababababababababababababababab//bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb//0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,0xcccccccccccccccccccccccccccccccccccccccc//0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0//1790000000//1789000000",
+    "expectedEventId": "midnight-25DEC26-ce6e612fd2f042dbb5374e8ecf9b5ecd06aa49f4d04d185239174919e59ffbad",
+    "expectedOutcomes": [
+      "not-minted",
+      "released",
+      "liquidated-by-0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "liquidated-by-0xcccccccccccccccccccccccccccccccccccccccc"
+    ]
+  }
+]

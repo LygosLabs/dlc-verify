@@ -11,8 +11,10 @@
 //! every value derived from them, but not the contract terms.
 //!
 //! ```text
-//! cargo run -p fixture-gen -- [OUT_DIR]     # OUT_DIR defaults to fixtures
+//! cargo run -p fixture-gen -- [OUT_DIR] [NAME...]   # OUT_DIR defaults to fixtures
 //! ```
+//!
+//! With names, only those vectors are written, so the others keep their bytes.
 
 use std::path::PathBuf;
 
@@ -48,6 +50,9 @@ use ddk_messages::{
     PayoutScriptOverrides, SignDlc, TlvRecord,
 };
 use ddk_trie::OracleNumericInfo;
+use dlc_verify_policy::midnight::{
+    MidnightEvent, liquidation_outcome, midnight_event_id, midnight_outcomes, sorted_liquidators,
+};
 use lightning::util::ser::Writeable;
 use serde_json::{Value, json};
 
@@ -57,6 +62,8 @@ const MATURITY: u32 = 1_767_225_600;
 const NOW: u64 = MATURITY as u64 - 86_400;
 /// Refund delay after maturity, and the accepter's timeout policy.
 const WEEK: u32 = 604_800;
+/// A Midnight loan's refund delay: the shortest the Midnight profile allows.
+const TWO_WEEKS: u32 = 2 * WEEK;
 const FEE_RATE_PER_VB: u64 = 2;
 const TOTAL: Amount = Amount::from_sat(100_000);
 const HALF: Amount = Amount::from_sat(50_000);
@@ -67,14 +74,22 @@ const NB_DIGITS: u16 = 10;
 const DDK_VERSION: &str = "2.0.0-rc.10";
 
 fn main() -> Result<()> {
-    let out_dir = PathBuf::from(
-        std::env::args()
-            .nth(1)
-            .unwrap_or_else(|| "fixtures".to_string()),
-    );
+    let mut args = std::env::args().skip(1);
+    let out_dir = PathBuf::from(args.next().unwrap_or_else(|| "fixtures".to_string()));
+    let only: Vec<String> = args.collect();
     std::fs::create_dir_all(&out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
     let secp = Secp256k1::new();
-    for fixture in fixtures(&secp)? {
+    let fixtures = fixtures(&secp)?;
+    if let Some(unknown) = only
+        .iter()
+        .find(|name| !fixtures.iter().any(|fixture| fixture.name == name.as_str()))
+    {
+        bail!("no vector named {unknown}");
+    }
+    for fixture in fixtures {
+        if !only.is_empty() && !only.iter().any(|name| name == fixture.name) {
+            continue;
+        }
         let path = out_dir.join(format!("{}.json", fixture.name));
         let text = serde_json::to_string_pretty(&fixture.to_json())? + "\n";
         std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
@@ -363,6 +378,10 @@ struct Spec {
     contract_flags: u8,
     overrides: Option<PayoutScriptOverrides>,
     attestations: Vec<OracleAttestation>,
+    /// The CET locktime; `0` for none.
+    cet_locktime: u32,
+    /// Seconds from maturity to the refund locktime.
+    refund_delay: u32,
 }
 
 /// A built and verified contract.
@@ -392,8 +411,8 @@ fn build(secp: &Secp256k1<All>, spec: Spec) -> Result<Fixture> {
         party: offerer.params(secp),
         fund_output_serial_id: Some(50),
         fee_rate_per_vb: FEE_RATE_PER_VB,
-        cet_locktime: Some(MATURITY),
-        refund_locktime: MATURITY + WEEK,
+        cet_locktime: Some(spec.cet_locktime),
+        refund_locktime: MATURITY + spec.refund_delay,
         contract_flags: spec.contract_flags,
     })
     .map_err(|e| anyhow!("{}: create_offer: {e}", spec.name))?;
@@ -405,8 +424,8 @@ fn build(secp: &Secp256k1<All>, spec: Spec) -> Result<Fixture> {
         &offer,
         AcceptOfferParams {
             party: accepter.params(secp),
-            min_timeout_interval: WEEK,
-            max_timeout_interval: WEEK,
+            min_timeout_interval: spec.refund_delay,
+            max_timeout_interval: spec.refund_delay,
             now_unix: NOW,
         },
         &accepter.funding_key,
@@ -563,6 +582,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
             contract_flags: 0,
             overrides: None,
             attestations: vec![attest(&alice, "enum-dual-funded", "down")?],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "enum-single-funded",
@@ -575,6 +596,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
             contract_flags: 0,
             overrides: None,
             attestations: vec![attest(&alice, "enum-single-funded", "up")?],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "enum-refund-to-accepter",
@@ -587,6 +610,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
             contract_flags: 0x01,
             overrides: None,
             attestations: vec![],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "enum-payout-override",
@@ -606,6 +631,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
                 }],
             }),
             attestations: vec![attest(&alice, "enum-payout-override", "down")?],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "numeric-dual-funded",
@@ -618,6 +645,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
             contract_flags: 0,
             overrides: None,
             attestations: vec![alice.attest(secp, "numeric-dual-funded", digits(512))?],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "numeric-payout-override",
@@ -638,6 +667,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
                 }],
             }),
             attestations: vec![alice.attest(secp, "numeric-payout-override", digits(100))?],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "enum-multi-oracle",
@@ -667,6 +698,8 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
                 attest(&alice, "enum-multi-oracle", "flat")?,
                 attest(&carol, "enum-multi-oracle", "flat")?,
             ],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
         Spec {
             name: "disjoint-enum-numeric",
@@ -685,7 +718,87 @@ fn fixtures(secp: &Secp256k1<All>) -> Result<Vec<Fixture>> {
             contract_flags: 0,
             overrides: None,
             attestations: vec![bob.attest(secp, "disjoint-numeric", digits(800))?],
+            cet_locktime: MATURITY,
+            refund_delay: WEEK,
         },
+        midnight_liquidator(secp)?,
     ];
     specs.into_iter().map(|spec| build(secp, spec)).collect()
+}
+
+/// The Midnight event of the `midnight-liquidator` vector.
+fn midnight_event() -> MidnightEvent {
+    MidnightEvent {
+        chain_id: 8453,
+        originator: format!("0x{}", "56".repeat(20)),
+        market_id: format!("0x{}", "ab".repeat(32)),
+        request_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".to_string(),
+        controller: format!("0x{}", "c0".repeat(20)),
+        mint_deadline: u64::from(MATURITY) - 30 * 86_400,
+        announced_at: NOW - 86_400,
+    }
+}
+
+/// A Lygos Midnight loan: the borrower (offerer) funds everything; `not-minted` and `released`
+/// pay the borrower; each `liquidated-by-<address>` pays the whole collateral on the lender's
+/// (accepter's) side, which TLV 65005 sends to the liquidator's own script unless the liquidator
+/// is paid at the lender's script. No CET locktime; the refund goes to the lender (flag 0x01)
+/// two weeks after maturity.
+fn midnight_liquidator(secp: &Secp256k1<All>) -> Result<Spec> {
+    let oracle = Oracle::new("midnight");
+    let outside = format!("0x{}", "11".repeat(20));
+    let at_lender = format!("0x{}", "22".repeat(20));
+    let liquidators =
+        sorted_liquidators([outside.as_str(), at_lender.as_str()]).map_err(|e| anyhow!("{e}"))?;
+    let event_id = midnight_event_id(&midnight_event(), &liquidators, u64::from(MATURITY))
+        .map_err(|e| anyhow!("{e}"))?;
+    let outcomes = midnight_outcomes(true, &liquidators);
+    let payouts = outcomes
+        .iter()
+        .map(|outcome| ContractOutcome {
+            outcome: outcome.clone(),
+            offer_payout: if outcome.starts_with("liquidated-by-") {
+                Amount::ZERO
+            } else {
+                TOTAL
+            },
+        })
+        .collect();
+    let announcement = oracle.announce(
+        secp,
+        &event_id,
+        EventDescriptor::EnumEvent(EnumEventDescriptor {
+            outcomes: outcomes.clone(),
+        }),
+        1,
+    )?;
+    Ok(Spec {
+        name: "midnight-liquidator",
+        description: "Lygos Midnight loan: the borrower funds everything; not-minted and released pay the borrower; liquidated-by-0x1111... pays a liquidator through TLV 65005 and liquidated-by-0x2222... pays the lender's own script. No CET locktime, refund to the accepter (0x01) two weeks after maturity.",
+        network: Network::Regtest,
+        contract_info: single(
+            TOTAL,
+            ContractInfoInner {
+                contract_descriptor: ContractDescriptor::EnumeratedContractDescriptor(
+                    EnumeratedContractDescriptor { payouts },
+                ),
+                oracle_info: single_oracle(announcement),
+            },
+        ),
+        offer_collateral: TOTAL,
+        offer_utxos: 1,
+        accept_utxos: 0,
+        contract_flags: 0x01,
+        overrides: Some(PayoutScriptOverrides {
+            overrides: vec![PayoutScriptOverride {
+                outcome: OverrideOutcome::Enum {
+                    outcome: liquidation_outcome(&outside),
+                },
+                script_pubkey: third_party_script(secp)?,
+            }],
+        }),
+        attestations: vec![oracle.attest(secp, &event_id, vec![liquidation_outcome(&outside)])?],
+        cet_locktime: 0,
+        refund_delay: TWO_WEEKS,
+    })
 }

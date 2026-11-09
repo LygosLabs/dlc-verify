@@ -4,7 +4,8 @@ Each file is a signed DLC made with `ddk::contract` by [`tools/fixture-gen`](../
 Generation runs DDK's own `verify_signed_contract`, so every vector here verifies under DDK.
 
 ```sh
-cargo run -p fixture-gen -- fixtures
+cargo run -p fixture-gen -- fixtures                        # every vector
+cargo run -p fixture-gen -- fixtures midnight-liquidator    # just the named ones
 ```
 
 Keys, scripts, serial ids and temporary contract ids are fixed. CET adaptor signatures use fresh
@@ -21,6 +22,7 @@ and the funding transaction's witnesses stay the same; the sign message changes)
 | `numeric-payout-override` | TLV 65005 on the lowest numeric CET |
 | `enum-multi-oracle` | 2-of-3 oracles |
 | `disjoint-enum-numeric` | Two contract infos: an enum one and a numeric one |
+| `midnight-liquidator` | A Midnight loan: the offerer funds everything, flag `0x01`, CET locktime 0, refund 14 days after maturity, a `midnight-…` event whose `liquidated-by-0x1111…` CET pays a third party through TLV 65005 |
 
 ## Fields
 
@@ -38,6 +40,12 @@ and the funding transaction's witnesses stay the same; the sign message changes)
 `policies/enum-payout-override.toml` and `policies/numeric-payout-override.json` state every term
 of those two vectors, in the two policy formats; `dlc-verify verify --policy` passes each against
 its vector. See [docs/policy.md](../docs/policy.md).
+
+## Terms
+
+`terms/` holds [profile](../docs/profiles.md) terms files: `midnight-liquidator.toml` for the
+`lygos-midnight` profile and `testnet-loan-118c9fc9.toml` for the `lygos-loan` profile against
+`examples/testnet-loan-118c9fc9.json`.
 
 ## Report snapshots
 

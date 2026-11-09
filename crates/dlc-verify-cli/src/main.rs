@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand, ValueEnum};
 use dlc_verify_core::text::outline;
 use dlc_verify_core::{Options, Status};
-use dlc_verify_policy::Policy;
+use dlc_verify_policy::{Policy, Profile, profile_policy};
 
 use crate::input::InputArgs;
 
@@ -52,8 +52,34 @@ enum Command {
         no_clock: bool,
         /// Also check the contract against a policy file (TOML or JSON) stating the terms you
         /// expect. See docs/policy.md.
-        #[arg(long, value_name = "FILE")]
+        #[arg(long, value_name = "FILE", conflicts_with = "profile")]
         policy: Option<PathBuf>,
+        /// Also check the contract against a profile: lygos-loan or lygos-midnight. See
+        /// docs/profiles.md.
+        #[arg(long, value_name = "NAME", value_parser = parse_profile)]
+        profile: Option<Profile>,
+        /// The deal terms the profile checks (TOML or JSON). Without it the profile checks only
+        /// the contract's shape.
+        #[arg(long, value_name = "FILE", requires = "profile")]
+        terms: Option<PathBuf>,
+    },
+    /// Print the policy a profile builds from deal terms, as JSON.
+    ///
+    /// Save it and edit it to check terms the profile does not cover; pass it back with
+    /// `verify --policy`.
+    Profile {
+        /// lygos-loan or lygos-midnight.
+        #[arg(value_parser = parse_profile)]
+        profile: Profile,
+        /// The deal terms (TOML or JSON).
+        #[arg(long, value_name = "FILE")]
+        terms: Option<PathBuf>,
+    },
+    /// List the oracle keys dlc-verify knows by name.
+    Oracles {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
     },
     /// Print what the messages say, without verifying them.
     Inspect {
@@ -104,8 +130,14 @@ fn run(cli: Cli) -> Result<u8, String> {
             now,
             no_clock,
             policy,
+            profile,
+            terms,
         } => {
-            let policy = policy.map(|path| read_policy(&path)).transpose()?;
+            let policy = match (policy, profile) {
+                (Some(path), _) => Some(read_policy(&path)?),
+                (None, Some(profile)) => Some(read_profile(profile, terms.as_deref())?),
+                (None, None) => None,
+            };
             let input = input.read()?;
             let now = match (now, no_clock) {
                 (Some(now), _) => Some(now),
@@ -137,6 +169,38 @@ fn run(cli: Cli) -> Result<u8, String> {
                 Status::Incomplete => EXIT_INCOMPLETE,
             })
         }
+        Command::Profile { profile, terms } => {
+            let policy = read_profile(profile, terms.as_deref())?;
+            println!("{}", policy.to_json().map_err(|error| error.to_string())?);
+            Ok(EXIT_PASS)
+        }
+        Command::Oracles { format } => {
+            let entries = dlc_verify_policy::registry().map_err(|error| error.to_string())?;
+            match format {
+                Format::Json => {
+                    let text = serde_json::to_string_pretty(&entries)
+                        .map_err(|error| error.to_string())?;
+                    println!("{text}");
+                }
+                Format::Text => {
+                    for entry in entries {
+                        let mut details = vec![entry.provider.clone()];
+                        details.extend(entry.network.clone());
+                        details.extend(entry.quarter.clone());
+                        if !entry.profiles.is_empty() {
+                            details.push(format!("profiles: {}", entry.profiles.join(", ")));
+                        }
+                        println!(
+                            "{:<20} {}  ({})",
+                            entry.name,
+                            entry.pubkey,
+                            details.join(", ")
+                        );
+                    }
+                }
+            }
+            Ok(EXIT_PASS)
+        }
         Command::Inspect { input, format } => {
             let input = input.read()?;
             let inspection = dlc_verify_core::inspect(&input);
@@ -155,6 +219,34 @@ fn read_policy(path: &std::path::Path) -> Result<Policy, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| format!("cannot read policy {}: {error}", path.display()))?;
     Policy::parse(&text).map_err(|error| format!("policy {}: {error}", path.display()))
+}
+
+fn parse_profile(name: &str) -> Result<Profile, String> {
+    Profile::from_name(name).ok_or_else(|| {
+        let names: Vec<&str> = Profile::ALL.iter().map(|profile| profile.name()).collect();
+        format!(
+            "unknown profile {name:?}; expected one of {}",
+            names.join(", ")
+        )
+    })
+}
+
+/// A profile's policy. Prints to stderr what the profile could not check.
+fn read_profile(profile: Profile, terms: Option<&std::path::Path>) -> Result<Policy, String> {
+    let text = terms
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .map_err(|error| format!("cannot read terms {}: {error}", path.display()))
+        })
+        .transpose()?;
+    let built = profile_policy(profile, text.as_deref()).map_err(|error| match terms {
+        Some(path) => format!("terms {}: {error}", path.display()),
+        None => format!("profile {}: {error}", profile.name()),
+    })?;
+    for note in &built.notes {
+        eprintln!("dlc-verify: {}: {note}", profile.name());
+    }
+    Ok(built.policy)
 }
 
 fn print_value(value: &serde_json::Value, format: Format) -> Result<(), String> {

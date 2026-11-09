@@ -72,7 +72,13 @@ fn fixtures_cover_the_contract_shapes() {
     };
 
     assert_eq!(fixture("enum-refund-to-accepter").contract_flags, 0x01);
-    for name in ["enum-payout-override", "numeric-payout-override"] {
+    // A Midnight loan: the refund goes to the accepter and one liquidation pays a third party.
+    assert_eq!(fixture("midnight-liquidator").contract_flags, 0x01);
+    for name in [
+        "enum-payout-override",
+        "numeric-payout-override",
+        "midnight-liquidator",
+    ] {
         let overrides = fixture(name)
             .payout_overrides
             .unwrap_or_else(|| unreachable!("{name}: no override record"));

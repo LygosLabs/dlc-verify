@@ -252,3 +252,102 @@ fn verify_rejects_a_bad_policy_file() {
     assert!(String::from_utf8_lossy(&bad.stderr).contains("unknown field `netwrok`"));
     assert_eq!(missing.status.code(), Some(3));
 }
+
+#[test]
+fn verify_with_a_profile_and_terms() {
+    let output = run(&[
+        "verify",
+        "fixtures/midnight-liquidator.json",
+        "--now",
+        "1767139200",
+        "--profile",
+        "lygos-midnight",
+        "--terms",
+        "fixtures/terms/midnight-liquidator.toml",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stdout(&output));
+    let text = stdout(&output);
+    assert!(text.contains("policy pass"), "{text}");
+    assert!(text.contains("pass  policy.oracle-events"), "{text}");
+
+    let output = run(&[
+        "verify",
+        "examples/testnet-loan-118c9fc9.json",
+        "--no-clock",
+        "--profile",
+        "lygos-loan",
+        "--terms",
+        "fixtures/terms/testnet-loan-118c9fc9.toml",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stdout(&output));
+}
+
+#[test]
+fn verify_with_the_wrong_profile_fails() {
+    let output = run(&[
+        "verify",
+        "fixtures/midnight-liquidator.json",
+        "--now",
+        "1767139200",
+        "--profile",
+        "lygos-loan",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("fail  policy.contract-flags"));
+}
+
+#[test]
+fn profile_arguments_are_checked() {
+    let both = run(&[
+        "verify",
+        "fixtures/midnight-liquidator.json",
+        "--no-clock",
+        "--profile",
+        "lygos-midnight",
+        "--policy",
+        "fixtures/policies/enum-payout-override.toml",
+    ]);
+    assert_eq!(both.status.code(), Some(3));
+    let terms_alone = run(&[
+        "verify",
+        "fixtures/midnight-liquidator.json",
+        "--no-clock",
+        "--terms",
+        "fixtures/terms/midnight-liquidator.toml",
+    ]);
+    assert_eq!(terms_alone.status.code(), Some(3));
+    let unknown = run(&["profile", "lygos-options"]);
+    assert_eq!(unknown.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&unknown.stderr).contains("lygos-midnight"));
+}
+
+#[test]
+fn profile_prints_the_policy_it_builds() {
+    let output = run(&[
+        "profile",
+        "lygos-midnight",
+        "--terms",
+        "fixtures/terms/midnight-liquidator.toml",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&output))
+        .unwrap_or_else(|error| unreachable!("profile output is not JSON: {error}"));
+    assert_eq!(value["schema"], "dlc-verify.policy.v1");
+    assert_eq!(value["contract_flags"][0], "refund-to-accepter");
+    assert_eq!(value["require_every_cet"], true);
+
+    let output = run(&["profile", "lygos-midnight"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("dlc-verify: lygos-midnight:"));
+}
+
+#[test]
+fn oracles_lists_the_registry() {
+    let output = run(&["oracles"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("magnolia-testnet"));
+    let output = run(&["oracles", "--format", "json"]);
+    let value: serde_json::Value = serde_json::from_str(&stdout(&output))
+        .unwrap_or_else(|error| unreachable!("oracles output is not JSON: {error}"));
+    assert_eq!(value[0]["name"], "magnolia-mainnet");
+}
