@@ -66,7 +66,7 @@ witness could not be checked; otherwise `pass`.
 
 - [x] 1. Workspace scaffold, toolchain, Rust CI
 - [x] 2. Input parsing (hex, file, stdin, bundles), strict decode, `inspect`
-- [ ] 3. `fixture-gen` and the first vectors (enum, `0x01`, 65005, numeric, multi-oracle)
+- [x] 3. `fixture-gen` and the first vectors (enum, `0x01`, 65005, numeric, multi-oracle)
 - [ ] 4. Rebuild and all structure, oracle, locktime and signature checks
 - [ ] 5. Report with payee table, text and JSON output, `verify` command
 - [ ] 6. Policy engine and policy files

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "tools/fixture-gen"]
 resolver = "3"
 
 [workspace.package]
@@ -36,6 +36,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 toml = "0.8"
+
+ddk = { version = "=2.0.0-rc.10", default-features = false }
 
 dlc-verify-core = { path = "crates/dlc-verify-core" }
 
