@@ -9,3 +9,6 @@ dist/
 .env*
 operator-*.json
 *.pdf
+
+# Rust
+/target/
