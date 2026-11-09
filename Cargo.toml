@@ -36,6 +36,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 toml = "0.8"
+# The wasm-bindgen CLI that builds web/pkg must be this exact version.
+wasm-bindgen = "=0.2.127"
 
 ddk = { version = "=2.0.0-rc.10", default-features = false }
 

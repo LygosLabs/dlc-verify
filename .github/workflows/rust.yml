@@ -24,3 +24,28 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # clang compiles libsecp256k1 for wasm32; llvm-ar indexes the archive.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.127
+      - run: tools/build-wasm.sh
+        env:
+          CC_wasm32_unknown_unknown: clang
+          AR_wasm32_unknown_unknown: llvm-ar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dlc-verify-wasm
+          path: web/pkg

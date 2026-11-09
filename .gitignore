@@ -12,3 +12,6 @@ operator-*.json
 
 # Rust
 /target/
+
+# Built by tools/build-wasm.sh
+/web/pkg/
