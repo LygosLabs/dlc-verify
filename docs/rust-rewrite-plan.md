@@ -73,5 +73,5 @@ witness could not be checked; otherwise `pass`.
 - [x] 7. Oracle registry, `lygos-loan` and `lygos-midnight` profiles
 - [x] 8. Keyless `settle` and `refund`
 - [x] 9. WASM build
-- [ ] 10. Web UI verifying in the browser
+- [x] 10. Web UI verifying in the browser
 - [ ] 11. Cutover: remove TS, new README, release workflow, Vercel serves the static site

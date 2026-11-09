@@ -1,8 +1,8 @@
 # WebAssembly module
 
-`crates/dlc-verify-wasm` compiles dlc-verify to WebAssembly, so a web page (ours in `web/`, or
-yours) can verify, settle and refund in the browser. The module has no network access and no
-storage: messages never leave the page.
+`crates/dlc-verify-wasm` compiles dlc-verify to WebAssembly, so a web page (ours in `web/`, see
+[web.md](web.md), or yours) can verify, settle and refund in the browser. The module has no
+network access and no storage: messages never leave the page.
 
 ## Build
 

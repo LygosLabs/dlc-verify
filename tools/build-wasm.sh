@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds the WebAssembly module into web/pkg, then checks it in Node against the fixtures.
+# Builds the WebAssembly module into web/pkg, then checks it, and the page in web/ that uses it,
+# in Node against the fixtures.
 #
 # Needs the wasm32-unknown-unknown Rust target, wasm-bindgen-cli at the version Cargo.toml pins,
 # a clang that can target wasm32 (to compile libsecp256k1; Apple's cannot, Homebrew's llvm can)
@@ -32,3 +33,7 @@ rm -rf "$out"
 wasm-bindgen --target web --out-dir "$out" \
   target/wasm32-unknown-unknown/release/dlc_verify_wasm.wasm
 node tools/wasm-smoke.mjs "$out"
+# The page's own scripts, against the module just built (they load it from web/pkg).
+if [[ "$out" == web/pkg ]]; then
+  node --test tools/web.test.mjs
+fi
