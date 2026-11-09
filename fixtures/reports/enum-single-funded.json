@@ -2,7 +2,7 @@
   "schema": "dlc-verify.report.v1",
   "verifier": {
     "name": "dlc-verify",
-    "version": "0.1.0",
+    "version": "2.0.0",
     "ddk": "2.0.0-rc.10"
   },
   "status": "pass",

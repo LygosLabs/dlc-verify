@@ -1,4 +1,4 @@
-dlc-verify 0.1.0 (DDK 2.0.0-rc.10)
+dlc-verify 2.0.0 (DDK 2.0.0-rc.10)
 Result: PASS  (27 passed, 0 warned, 0 failed, 0 skipped)
 
 Contract

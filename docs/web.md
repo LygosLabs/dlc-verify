@@ -45,8 +45,26 @@ runs it, and you can run it alone with `node --test tools/web.test.mjs`.
 ## Hosting
 
 Any static host serves `web/` once `web/pkg` is built. The CI's `wasm` job uploads the whole
-directory as the `dlc-verify-web` artifact. The host should:
+directory as the `dlc-verify-web` artifact, and each release has it as
+`dlc-verify-web-vX.Y.Z.tar.gz`. The host should:
 
 - serve `.wasm` as `application/wasm`; the page still works without it, a little slower;
 - send `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (or
   `frame-ancestors 'none'`, which a `<meta>` policy cannot set) and a strict `Referrer-Policy`.
+
+### Vercel
+
+`vercel.json` serves `web/` with those headers. Vercel's build machines cannot build the module,
+so Vercel does not build from git (`git.deploymentEnabled` is off). Instead, the `deploy` job in
+`.github/workflows/rust.yml` deploys every push to `main`: it takes the page the `wasm` job built
+and tested, then runs `vercel build` and `vercel deploy --prebuilt --prod`. It needs three
+repository secrets, and skips the deploy without them:
+
+| Secret | Value |
+|---|---|
+| `VERCEL_TOKEN` | A Vercel access token that can deploy the project |
+| `VERCEL_ORG_ID` | The team id: `orgId` in `.vercel/project.json` after `vercel link` |
+| `VERCEL_PROJECT_ID` | `projectId` in the same file |
+
+To deploy by hand, build first: `tools/build-wasm.sh`, then `vercel build --prod` and
+`vercel deploy --prebuilt --prod`. `vercel build` stops with an error if `web/pkg` is missing.

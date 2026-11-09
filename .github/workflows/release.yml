@@ -1,0 +1,139 @@
+name: Release
+
+# Push a tag vX.Y.Z that matches the version in Cargo.toml. This builds the command-line tool for
+# each platform and the web page, and drafts a GitHub release with them, their SHA-256 sums and
+# build attestations. Check the draft and publish it by hand.
+on:
+  push:
+    tags:
+      - "v*"
+      # The TypeScript version's tag.
+      - "!v*-typescript"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: The tag names the version in Cargo.toml
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "dlc-verify-cli") | .version')"
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in Cargo.toml."
+            exit 1
+          fi
+      - run: cargo test --workspace --locked
+
+  cli:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04, native: true }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, native: true }
+          - { target: aarch64-apple-darwin, os: macos-latest, native: true }
+          - { target: x86_64-apple-darwin, os: macos-latest, native: false }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, native: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build -p dlc-verify-cli --release --locked --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name="dlc-verify-$GITHUB_REF_NAME-${{ matrix.target }}"
+          exe=dlc-verify
+          if [[ "${{ matrix.target }}" == *windows* ]]; then exe=dlc-verify.exe; fi
+          bin="target/${{ matrix.target }}/release/$exe"
+          if [[ "${{ matrix.native }}" == true ]]; then
+            "$bin" --version
+            "$bin" verify fixtures/midnight-liquidator.json --no-clock > /dev/null
+          fi
+          mkdir -p "dist/$name"
+          cp "$bin" README.md LICENSE "dist/$name/"
+          cd dist
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          rm -r "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  web:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # clang compiles libsecp256k1 for wasm32; llvm-ar indexes the archive.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.127
+      - run: tools/build-wasm.sh
+        env:
+          CC_wasm32_unknown_unknown: clang
+          AR_wasm32_unknown_unknown: llvm-ar
+      - name: Package
+        run: |
+          name="dlc-verify-web-$GITHUB_REF_NAME"
+          mkdir dist
+          cp -R web "dist/$name"
+          tar -czf "dist/$name.tar.gz" -C dist "$name"
+          rm -r "dist/$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [cli, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft --verify-tag --generate-notes "${prerelease[@]}" \
+            --title "dlc-verify $GITHUB_REF_NAME"

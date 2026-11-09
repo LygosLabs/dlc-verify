@@ -1,96 +1,55 @@
-# Contributing to DLC Verify
+# Contributing to dlc-verify
 
-Thank you for your interest in contributing to DLC Verify! This document provides guidelines for contributing to the project.
+Thanks for helping. Bug reports, new test vectors and fixes are all welcome; open an issue to
+discuss anything larger first.
 
-## Development Setup
+## Set up
 
-### Prerequisites
+- Rust: `rust-toolchain.toml` pins the version, and rustup installs it on first use.
+- For the WebAssembly module and the web page: the `wasm32-unknown-unknown` target,
+  `wasm-bindgen-cli` at the version `Cargo.toml` pins, a clang that can target wasm32 (on macOS,
+  Homebrew's `llvm`) and Node 20 or later. [docs/wasm.md](docs/wasm.md) has the details.
 
-- Node.js 18+
-- pnpm (recommended)
-
-### Getting Started
-
-1. Fork and clone the repository:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/dlc-verify.git
-   cd dlc-verify
-   ```
-
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-
-3. Build the project:
-   ```bash
-   pnpm run build
-   ```
-
-4. Run the development server:
-   ```bash
-   pnpm start
-   # Open http://localhost:3456
-   ```
-
-## Running Tests
-
-Run the test suite before submitting changes:
-
-```bash
-pnpm test
+```sh
+git clone https://github.com/LygosLabs/dlc-verify.git
+cd dlc-verify
+cargo test --workspace --locked
 ```
 
-For development with watch mode:
+## Before you open a pull request
 
-```bash
-pnpm test:watch
+CI runs these; run them first:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+tools/build-wasm.sh    # if you changed the core, the WebAssembly crate or web/
 ```
 
-## Linting
+## Guidelines
 
-This project uses [Biome](https://biomejs.dev/) for linting and formatting.
+- **The core stays pure.** `dlc-verify-core` does no I/O and never reads the clock; the time is
+  passed in. It knows only the offerer and the accepter. Lender, borrower, liquidator and other
+  roles belong in profiles (`dlc-verify-policy`).
+- **DDK rebuilds the transactions.** Use DDK's own builders rather than reimplementing them, so
+  dlc-verify checks what DDK will sign. The DDK crates are pinned to one exact version in the
+  workspace `Cargo.toml`; bump them together.
+- **No panics.** Clippy denies `unwrap`, `expect` and `panic!`, in tests too: return a `Result`.
+  A panic in the browser traps the WebAssembly module.
+- **A new check gets an id and a test.** Check ids are `stage.name` (see the table in the
+  README). If a change alters a report, rerun `UPDATE_SNAPSHOTS=1 cargo test -p dlc-verify-core
+  --test report` and review the diff in `fixtures/reports/`.
+- **New contract shapes get a vector.** `tools/fixture-gen` makes signed contracts with DDK; see
+  [fixtures/README.md](fixtures/README.md).
+- **The web page writes what messages say as text, never as HTML,** and loads nothing from other
+  origins. `tools/web.test.mjs` checks the second.
 
-Check for linting issues:
+## Pull requests
 
-```bash
-pnpm lint
-```
+Branch from `main`, keep each pull request to one change, and say what it does and why.
+Describe any change to the JSON report or the exit codes, since scripts depend on them.
 
-Auto-fix linting issues:
+## Security
 
-```bash
-pnpm lint:fix
-```
-
-## Pull Request Process
-
-1. Create a feature branch from `main`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make your changes and ensure:
-   - Tests pass (`pnpm test`)
-   - Linting passes (`pnpm lint`)
-   - Code builds successfully (`pnpm run build`)
-
-3. Write clear, descriptive commit messages
-
-4. Push your branch and open a Pull Request against `main`
-
-5. Describe your changes in the PR description, including:
-   - What the change does
-   - Why it's needed
-   - Any breaking changes or migration steps
-
-## Code Style
-
-- TypeScript for all source code
-- Follow existing patterns in the codebase
-- Keep functions focused and well-named
-- Add tests for new functionality
-
-## Questions?
-
-Feel free to open an issue for questions, bug reports, or feature requests.
+Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes, not in an issue.

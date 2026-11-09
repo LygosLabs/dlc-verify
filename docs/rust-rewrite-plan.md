@@ -74,4 +74,4 @@ witness could not be checked; otherwise `pass`.
 - [x] 8. Keyless `settle` and `refund`
 - [x] 9. WASM build
 - [x] 10. Web UI verifying in the browser
-- [ ] 11. Cutover: remove TS, new README, release workflow, Vercel serves the static site
+- [x] 11. Cutover: remove TS, new README, release workflow, Vercel serves the static site

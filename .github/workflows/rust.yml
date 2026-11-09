@@ -50,3 +50,33 @@ jobs:
         with:
           name: dlc-verify-web
           path: web
+
+  # Publishes the page built above to Vercel, from main only. Needs the VERCEL_TOKEN,
+  # VERCEL_ORG_ID and VERCEL_PROJECT_ID secrets; without them it does nothing. See docs/web.md.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, wasm]
+    runs-on: ubuntu-latest
+    concurrency: vercel-production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dlc-verify-web
+          path: web
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy to Vercel
+        if: env.VERCEL_TOKEN != ''
+        run: |
+          npx --yes vercel@64.7.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx --yes vercel@64.7.0 build --prod --token="$VERCEL_TOKEN"
+          npx --yes vercel@64.7.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: Skip
+        if: env.VERCEL_TOKEN == ''
+        run: echo "::notice::VERCEL_TOKEN is not set, so the page was not deployed."
