@@ -27,6 +27,22 @@ fn civil_from_days(days: u64) -> (u64, u64, u64) {
     (year, month, day)
 }
 
+/// Formats a duration in seconds, e.g. `2d 3h`, `3h 5m`, `5m` or `42s`.
+pub fn format_duration(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3600;
+    let minutes = (seconds % 3600) / 60;
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else if minutes > 0 {
+        format!("{minutes}m")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
 /// What a transaction locktime means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -60,6 +76,14 @@ mod tests {
         assert_eq!(format_unix(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(format_unix(1_793_232_000), "2026-10-29T00:00:00Z");
         assert_eq!(format_unix(4_102_444_799), "2099-12-31T23:59:59Z");
+    }
+
+    #[test]
+    fn formats_durations() {
+        assert_eq!(format_duration(42), "42s");
+        assert_eq!(format_duration(300), "5m");
+        assert_eq!(format_duration(3 * 3600 + 300), "3h 5m");
+        assert_eq!(format_duration(2 * 86_400 + 3 * 3600 + 59), "2d 3h");
     }
 
     #[test]

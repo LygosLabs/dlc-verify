@@ -11,10 +11,12 @@ pub mod network;
 pub mod summary;
 pub mod text;
 pub mod time;
+pub mod verify;
 
 pub use decode::{DecodeFailure, Messages, decode};
 pub use input::{Input, InputError, MessageKind};
 pub use inspect::{Inspection, inspect};
+pub use verify::{Check, CheckStatus, Options, Status, Verification, verify};
 
 /// The version of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
