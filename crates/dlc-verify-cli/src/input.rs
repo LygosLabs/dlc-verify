@@ -25,6 +25,19 @@ pub struct InputArgs {
 impl InputArgs {
     /// Reads the messages.
     pub fn read(&self) -> Result<Input, String> {
+        self.read_with_bundle().map(|(input, _)| input)
+    }
+
+    /// Whether any message is read from standard input.
+    pub fn uses_stdin(&self) -> bool {
+        [&self.input, &self.offer, &self.accept, &self.sign]
+            .into_iter()
+            .any(|value| value.as_deref() == Some("-"))
+    }
+
+    /// Reads the messages, and returns the bundle's text too when they came as one, for the
+    /// other things a bundle can carry (its attestations).
+    pub fn read_with_bundle(&self) -> Result<(Input, Option<String>), String> {
         let separate = self.offer.is_some() || self.accept.is_some() || self.sign.is_some();
         let stdin_uses = [&self.input, &self.offer, &self.accept, &self.sign]
             .into_iter()
@@ -40,7 +53,9 @@ impl InputArgs {
             (None, false) => Err("no input: pass a bundle file, `-`, or --offer".to_owned()),
             (Some(source), false) => {
                 let text = read_source(source, true)?;
-                Input::from_text(&text).map_err(|error| error.to_string())
+                let input = Input::from_text(&text).map_err(|error| error.to_string())?;
+                let bundle = text.trim_start().starts_with('{').then_some(text);
+                Ok((input, bundle))
             }
             (None, true) => {
                 let offer = self
@@ -58,8 +73,9 @@ impl InputArgs {
                     .as_deref()
                     .map(|source| read_source(source, false))
                     .transpose()?;
-                Input::from_hex(&offer, accept.as_deref(), sign.as_deref())
-                    .map_err(|error| error.to_string())
+                let input = Input::from_hex(&offer, accept.as_deref(), sign.as_deref())
+                    .map_err(|error| error.to_string())?;
+                Ok((input, None))
             }
         }
     }

@@ -71,7 +71,7 @@ witness could not be checked; otherwise `pass`.
 - [x] 5. Report with payee table, text and JSON output, `verify` command
 - [x] 6. Policy engine and policy files
 - [x] 7. Oracle registry, `lygos-loan` and `lygos-midnight` profiles
-- [ ] 8. Keyless `settle` and `refund`
+- [x] 8. Keyless `settle` and `refund`
 - [ ] 9. WASM build
 - [ ] 10. Web UI verifying in the browser
 - [ ] 11. Cutover: remove TS, new README, release workflow, Vercel serves the static site

@@ -33,7 +33,8 @@ and the funding transaction's witnesses stay the same; the sign message changes)
 - `offerer_funding_pubkey`, `accepter_funding_pubkey`: the parties' funding keys.
 - `funding_transaction`: the fully signed funding transaction.
 - `attestations`: oracle attestations for one outcome (`hex` is the TLV-encoded attestation), for
-  settlement tests. `enum-refund-to-accepter` has none.
+  settlement tests and `dlc-verify settle` (see [docs/settle.md](../docs/settle.md)).
+  `enum-refund-to-accepter` has none.
 
 ## Policies
 

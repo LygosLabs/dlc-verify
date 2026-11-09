@@ -247,6 +247,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoinconsensus"
+version = "0.106.0+26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e12cba9cce5043cdda968e07b9df6d05ec6b0b38aa27a9a40bb575cf3e521ae9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -433,6 +442,7 @@ dependencies = [
  "clap",
  "dlc-verify-core",
  "dlc-verify-policy",
+ "dlc-verify-settle",
  "serde_json",
 ]
 
@@ -463,6 +473,22 @@ dependencies = [
  "serde_json",
  "sha2",
  "toml",
+]
+
+[[package]]
+name = "dlc-verify-settle"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "bitcoinconsensus",
+ "ddk-dlc",
+ "ddk-manager",
+ "ddk-messages",
+ "dlc-verify-core",
+ "hex",
+ "secp256k1-zkp",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -16,6 +16,7 @@ path = "src/main.rs"
 clap = { workspace = true }
 dlc-verify-core = { workspace = true }
 dlc-verify-policy = { workspace = true }
+dlc-verify-settle = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

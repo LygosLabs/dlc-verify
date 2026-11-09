@@ -41,6 +41,7 @@ ddk = { version = "=2.0.0-rc.10", default-features = false }
 
 dlc-verify-core = { path = "crates/dlc-verify-core" }
 dlc-verify-policy = { path = "crates/dlc-verify-policy" }
+dlc-verify-settle = { path = "crates/dlc-verify-settle" }
 
 [profile.release]
 lto = true

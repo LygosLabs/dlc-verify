@@ -10,8 +10,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use dlc_verify_core::text::outline;
 use dlc_verify_core::{Options, Status};
 use dlc_verify_policy::{Policy, Profile, profile_policy};
+use dlc_verify_settle::{SettleError, Settlement};
 
-use crate::input::InputArgs;
+use crate::input::{InputArgs, read_source};
 
 /// Exit code: every check passed.
 const EXIT_PASS: u8 = 0;
@@ -81,6 +82,34 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Complete the CET for an oracle's attestation, ready to broadcast. Needs no keys.
+    ///
+    /// Decrypts both parties' adaptor signatures for the attested outcome with the oracle's
+    /// signatures, checks them against the funding output and prints the signed transaction.
+    /// Exits 0 with the transaction, 1 when the attestation is not for this contract or settles
+    /// no CET, 2 when the messages are not all there and 3 on bad arguments. See docs/settle.md.
+    Settle {
+        #[command(flatten)]
+        input: InputArgs,
+        /// An oracle attestation: TLV hex, a JSON list of them, `@FILE`, or `-` for standard
+        /// input. Repeat for each oracle of a threshold contract. Defaults to the bundle's
+        /// `attestations`.
+        #[arg(long = "attestation", value_name = "HEX|@FILE|-")]
+        attestations: Vec<String>,
+        #[command(flatten)]
+        options: SettleArgs,
+    },
+    /// Complete the refund transaction, ready to broadcast after the refund locktime. Needs no
+    /// keys.
+    ///
+    /// Exits 0 with the transaction, 1 when a signature does not verify, 2 when the messages
+    /// are not all there and 3 on bad arguments. See docs/settle.md.
+    Refund {
+        #[command(flatten)]
+        input: InputArgs,
+        #[command(flatten)]
+        options: SettleArgs,
+    },
     /// Print what the messages say, without verifying them.
     Inspect {
         #[command(flatten)]
@@ -89,6 +118,21 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+}
+
+/// Options shared by `settle` and `refund`.
+#[derive(Debug, clap::Args)]
+struct SettleArgs {
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    format: Format,
+    /// The current time as a Unix timestamp, for the maturity checks and to say whether the
+    /// locktime has passed. Defaults to the system clock.
+    #[arg(long, value_name = "UNIX", conflicts_with = "no_clock")]
+    now: Option<u64>,
+    /// Do not read the clock.
+    #[arg(long)]
+    no_clock: bool,
 }
 
 /// Output format.
@@ -139,16 +183,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 (None, None) => None,
             };
             let input = input.read()?;
-            let now = match (now, no_clock) {
-                (Some(now), _) => Some(now),
-                (None, true) => None,
-                (None, false) => Some(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map_err(|error| format!("the system clock is before 1970: {error}"))?
-                        .as_secs(),
-                ),
-            };
+            let now = clock(now, no_clock)?;
             let verification = dlc_verify_core::verify(&input, &Options { now });
             let mut report = dlc_verify_core::report(&verification);
             if let Some(policy) = &policy {
@@ -201,6 +236,52 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             Ok(EXIT_PASS)
         }
+        Command::Settle {
+            input,
+            attestations,
+            options,
+        } => {
+            let stdin_attestations = attestations.iter().filter(|source| *source == "-").count();
+            if stdin_attestations + usize::from(input.uses_stdin()) > 1 {
+                return Err("standard input (-) can be used for one input only".to_owned());
+            }
+            let (input, bundle) = input.read_with_bundle()?;
+            let mut parsed = Vec::new();
+            for source in &attestations {
+                let text = read_source(source, false)?;
+                parsed.extend(
+                    dlc_verify_settle::parse_attestations(&text)
+                        .map_err(|error| format!("--attestation: {error}"))?,
+                );
+            }
+            if attestations.is_empty() {
+                if let Some(bundle) = &bundle {
+                    parsed = dlc_verify_settle::attestations_from_bundle(bundle)
+                        .map_err(|error| error.to_string())?;
+                }
+                if parsed.is_empty() {
+                    return Err(
+                        "no attestation: pass --attestation, or a bundle with `attestations`"
+                            .to_owned(),
+                    );
+                }
+            }
+            let now = clock(options.now, options.no_clock)?;
+            let verification = dlc_verify_core::verify(&input, &Options { now });
+            settled(
+                dlc_verify_settle::settle(&verification, &parsed, now),
+                options.format,
+            )
+        }
+        Command::Refund { input, options } => {
+            let input = input.read()?;
+            let now = clock(options.now, options.no_clock)?;
+            let verification = dlc_verify_core::verify(&input, &Options { now });
+            settled(
+                dlc_verify_settle::refund(&verification, now),
+                options.format,
+            )
+        }
         Command::Inspect { input, format } => {
             let input = input.read()?;
             let inspection = dlc_verify_core::inspect(&input);
@@ -213,6 +294,48 @@ fn run(cli: Cli) -> Result<u8, String> {
             })
         }
     }
+}
+
+/// `now`, the system clock, or no time at all with `no_clock`.
+fn clock(now: Option<u64>, no_clock: bool) -> Result<Option<u64>, String> {
+    match (now, no_clock) {
+        (Some(now), _) => Ok(Some(now)),
+        (None, true) => Ok(None),
+        (None, false) => SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|elapsed| Some(elapsed.as_secs()))
+            .map_err(|error| format!("the system clock is before 1970: {error}")),
+    }
+}
+
+/// Prints a settlement, or why there is none, and gives the exit code.
+fn settled(result: Result<Settlement, SettleError>, format: Format) -> Result<u8, String> {
+    let settlement = match result {
+        Ok(settlement) => settlement,
+        Err(error) => {
+            eprintln!("dlc-verify: {error}");
+            return Ok(match error {
+                SettleError::Incomplete(_) => EXIT_INCOMPLETE,
+                _ => EXIT_FAIL,
+            });
+        }
+    };
+    match format {
+        Format::Json => {
+            if settlement.verification != Status::Pass {
+                eprintln!(
+                    "dlc-verify: warning: the messages did not pass verification ({}); run \
+                     `dlc-verify verify` and read the report before broadcasting",
+                    settlement.verification.name()
+                );
+            }
+            let text =
+                serde_json::to_string_pretty(&settlement).map_err(|error| error.to_string())?;
+            println!("{text}");
+        }
+        Format::Text => print!("{}", dlc_verify_settle::render_text(&settlement)),
+    }
+    Ok(EXIT_PASS)
 }
 
 fn read_policy(path: &std::path::Path) -> Result<Policy, String> {

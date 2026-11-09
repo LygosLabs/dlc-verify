@@ -351,3 +351,171 @@ fn oracles_lists_the_registry() {
         .unwrap_or_else(|error| unreachable!("oracles output is not JSON: {error}"));
     assert_eq!(value[0]["name"], "magnolia-mainnet");
 }
+
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn settle_uses_the_bundles_attestations() {
+    let output = run(&[
+        "settle",
+        "fixtures/midnight-liquidator.json",
+        "--now",
+        "1767139200",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let text = stdout(&output);
+    assert!(text.starts_with(
+        "Signed CET for outcome liquidated-by-0x1111111111111111111111111111111111111111"
+    ));
+    assert!(
+        text.contains("100,000 sat to third-party bcrt1q3qr7lswmh25nplahuj3m474ujs6vjvpu6976ja")
+    );
+}
+
+#[test]
+fn settle_with_attestation_arguments_prints_json() {
+    let value = fixture_value("enum-multi-oracle");
+    let first = hex_field(&value["attestations"][0], "hex");
+    let second = hex_field(&value["attestations"][1], "hex");
+    let mut args = vec![
+        "settle",
+        "--offer",
+        hex_field(&value, "offer"),
+        "--accept",
+        hex_field(&value, "accept"),
+        "--sign",
+        hex_field(&value, "sign"),
+        "--attestation",
+        first,
+        "--format",
+        "json",
+        "--now",
+        "1767139200",
+    ];
+    // One oracle of a 2-of-3 contract settles nothing.
+    let output = run(&args);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("matches no CET"),
+        "{}",
+        stderr(&output)
+    );
+
+    args.extend(["--attestation", second]);
+    let output = run(&args);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let settlement: serde_json::Value = serde_json::from_str(&stdout(&output))
+        .unwrap_or_else(|error| unreachable!("settle output is not JSON: {error}"));
+    assert_eq!(settlement["schema"], "dlc-verify/settlement/v1");
+    assert_eq!(settlement["kind"], "cet");
+    assert_eq!(settlement["cet"]["outcome"], "flat");
+    assert_eq!(settlement["broadcast"]["reached"], false);
+}
+
+#[test]
+fn settle_reads_an_attestation_file() {
+    let value = fixture_value("enum-dual-funded");
+    let dir = std::env::temp_dir().join(format!("dlc-verify-settle-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|error| unreachable!("{error}"));
+    let path = dir.join("attestations.json");
+    std::fs::write(&path, value["attestations"].to_string())
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let attestation = format!("@{}", path.display());
+    let output = run(&[
+        "settle",
+        "--offer",
+        hex_field(&value, "offer"),
+        "--accept",
+        hex_field(&value, "accept"),
+        "--sign",
+        hex_field(&value, "sign"),
+        "--attestation",
+        &attestation,
+        "--no-clock",
+    ]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(stdout(&output).starts_with("Signed CET for outcome down"));
+}
+
+#[test]
+fn settle_refuses_what_it_cannot_settle() {
+    // A bundle without attestations, and no --attestation.
+    let output = run(&["settle", "fixtures/enum-refund-to-accepter.json"]);
+    assert_eq!(output.status.code(), Some(3));
+    assert!(stderr(&output).contains("no attestation"));
+
+    // Another contract's attestation.
+    let other = fixture_value("enum-single-funded");
+    let output = run(&[
+        "settle",
+        "fixtures/enum-dual-funded.json",
+        "--attestation",
+        hex_field(&other["attestations"][0], "hex"),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("no attestation is for this contract"));
+
+    // Not an attestation.
+    let output = run(&[
+        "settle",
+        "fixtures/enum-dual-funded.json",
+        "--attestation",
+        "fdd86800",
+    ]);
+    assert_eq!(output.status.code(), Some(3));
+
+    // No sign message.
+    let value = fixture_value("enum-dual-funded");
+    let output = run(&[
+        "settle",
+        "--offer",
+        hex_field(&value, "offer"),
+        "--accept",
+        hex_field(&value, "accept"),
+        "--attestation",
+        hex_field(&value["attestations"][0], "hex"),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("no sign message"));
+
+    // Standard input twice.
+    let output = run(&["settle", "-", "--attestation", "-"]);
+    assert_eq!(output.status.code(), Some(3));
+}
+
+#[test]
+fn refund_prints_the_signed_refund() {
+    let output = run(&[
+        "refund",
+        "fixtures/enum-refund-to-accepter.json",
+        "--now",
+        "1767139200",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let text = stdout(&output);
+    assert!(text.starts_with("Signed refund"));
+    assert!(text.contains("sat to accepter"));
+    assert!(text.contains("(not yet)"));
+
+    let output = run(&[
+        "refund",
+        "fixtures/enum-refund-to-accepter.json",
+        "--format",
+        "json",
+        "--now",
+        "4000000000",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    let settlement: serde_json::Value = serde_json::from_str(&stdout(&output))
+        .unwrap_or_else(|error| unreachable!("refund output is not JSON: {error}"));
+    assert_eq!(settlement["kind"], "refund");
+    assert_eq!(settlement["broadcast"]["reached"], true);
+    assert!(settlement.get("cet").is_none());
+
+    let value = fixture_value("enum-dual-funded");
+    let output = run(&["refund", "--offer", hex_field(&value, "offer")]);
+    assert_eq!(output.status.code(), Some(2));
+}
