@@ -4,15 +4,17 @@
 //! signature against them. It performs no I/O and reads no clock: the caller passes the current
 //! time in.
 
+pub mod decode;
+pub mod input;
+pub mod inspect;
+pub mod network;
+pub mod summary;
+pub mod text;
+pub mod time;
+
+pub use decode::{DecodeFailure, Messages, decode};
+pub use input::{Input, InputError, MessageKind};
+pub use inspect::{Inspection, inspect};
+
 /// The version of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn version_is_set() {
-        assert!(!VERSION.is_empty());
-    }
-}
