@@ -2,12 +2,14 @@
 
 mod input;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dlc_verify_core::text::outline;
 use dlc_verify_core::{Options, Status};
+use dlc_verify_policy::Policy;
 
 use crate::input::InputArgs;
 
@@ -32,8 +34,9 @@ struct Cli {
 enum Command {
     /// Rebuild the contract and check every message and signature.
     ///
-    /// Exits 0 when every check passes, 1 when one fails, 2 when the messages are not enough to
-    /// check everything (no sign message, for example) and 3 on bad arguments.
+    /// Exits 0 when every check (and every policy check, with --policy) passes, 1 when one
+    /// fails, 2 when the messages are not enough to check everything (no sign message, for
+    /// example) and 3 on bad arguments or an invalid policy.
     Verify {
         #[command(flatten)]
         input: InputArgs,
@@ -47,6 +50,10 @@ enum Command {
         /// Do not read the clock; the maturity checks warn that they could not run.
         #[arg(long)]
         no_clock: bool,
+        /// Also check the contract against a policy file (TOML or JSON) stating the terms you
+        /// expect. See docs/policy.md.
+        #[arg(long, value_name = "FILE")]
+        policy: Option<PathBuf>,
     },
     /// Print what the messages say, without verifying them.
     Inspect {
@@ -96,7 +103,9 @@ fn run(cli: Cli) -> Result<u8, String> {
             format,
             now,
             no_clock,
+            policy,
         } => {
+            let policy = policy.map(|path| read_policy(&path)).transpose()?;
             let input = input.read()?;
             let now = match (now, no_clock) {
                 (Some(now), _) => Some(now),
@@ -109,7 +118,11 @@ fn run(cli: Cli) -> Result<u8, String> {
                 ),
             };
             let verification = dlc_verify_core::verify(&input, &Options { now });
-            let report = dlc_verify_core::report(&verification);
+            let mut report = dlc_verify_core::report(&verification);
+            if let Some(policy) = &policy {
+                let outcome = dlc_verify_policy::evaluate(policy, &verification, &report);
+                report = report.with_policy(outcome);
+            }
             match format {
                 Format::Json => {
                     let text =
@@ -136,6 +149,12 @@ fn run(cli: Cli) -> Result<u8, String> {
             })
         }
     }
+}
+
+fn read_policy(path: &std::path::Path) -> Result<Policy, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read policy {}: {error}", path.display()))?;
+    Policy::parse(&text).map_err(|error| format!("policy {}: {error}", path.display()))
 }
 
 fn print_value(value: &serde_json::Value, format: Format) -> Result<(), String> {

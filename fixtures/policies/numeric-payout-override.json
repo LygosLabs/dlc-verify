@@ -1,0 +1,19 @@
+{
+  "schema": "dlc-verify.policy.v1",
+  "name": "numeric-payout-override",
+  "network": "regtest",
+  "total_collateral_sat": 100000,
+  "allowed_tlvs": [65005],
+  "oracle": {
+    "pubkeys": ["02a8ecd305fc21c765c7fec0eb645192368367f5c6d2efc794f290065d4c2d70bd"],
+    "threshold": 1
+  },
+  "locktimes": { "refund_delay_min": 86400 },
+  "refund": { "pay": [{ "party": "offerer" }, { "party": "accepter" }] },
+  "require_every_cet": true,
+  "cets": [
+    { "values": [0, 319], "pay": [{ "script": "00148807efc1dbbaa930ffb7e4a3bafabc9434c9303c", "value_sat": 100000 }] },
+    { "values": [320, 679], "pay": [{ "party": "offerer", "min_value_sat": 10000 }, { "party": "accepter", "min_value_sat": 10000 }] },
+    { "values": [680, 1023], "pay": [{ "party": "offerer", "value_sat": 100000 }] }
+  ]
+}

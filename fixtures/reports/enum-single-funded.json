@@ -237,6 +237,10 @@
         "index": 0,
         "contract_info": 0,
         "outcome": "up",
+        "settles": {
+          "kind": "enum",
+          "outcome": "up"
+        },
         "txid": "2649726cdeb4ec19c15e96523832a53335a9f2649f44b662518ba1689ecc79f3",
         "outputs": [
           {
@@ -254,6 +258,10 @@
         "index": 1,
         "contract_info": 0,
         "outcome": "down",
+        "settles": {
+          "kind": "enum",
+          "outcome": "down"
+        },
         "txid": "ec184b6d7863fa23b289eea7aa2a0dedb0be13cfc067697c89e042075aeeb289",
         "outputs": [
           {
@@ -271,6 +279,10 @@
         "index": 2,
         "contract_info": 0,
         "outcome": "flat",
+        "settles": {
+          "kind": "enum",
+          "outcome": "flat"
+        },
         "txid": "7147fc253fcbccc0f1dd6f137fff5defc8aaf0243f443934ff2b714d92c8aeb1",
         "outputs": [
           {

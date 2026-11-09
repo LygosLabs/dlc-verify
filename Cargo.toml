@@ -40,6 +40,7 @@ toml = "0.8"
 ddk = { version = "=2.0.0-rc.10", default-features = false }
 
 dlc-verify-core = { path = "crates/dlc-verify-core" }
+dlc-verify-policy = { path = "crates/dlc-verify-policy" }
 
 [profile.release]
 lto = true

@@ -69,7 +69,7 @@ witness could not be checked; otherwise `pass`.
 - [x] 3. `fixture-gen` and the first vectors (enum, `0x01`, 65005, numeric, multi-oracle)
 - [x] 4. Rebuild and all structure, oracle, locktime and signature checks
 - [x] 5. Report with payee table, text and JSON output, `verify` command
-- [ ] 6. Policy engine and policy files
+- [x] 6. Policy engine and policy files
 - [ ] 7. Oracle registry, `lygos-loan` and `lygos-midnight` profiles
 - [ ] 8. Keyless `settle` and `refund`
 - [ ] 9. WASM build

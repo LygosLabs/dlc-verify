@@ -36,7 +36,7 @@ pub struct Report {
     pub schema: &'static str,
     /// The verifier that wrote the report.
     pub verifier: Verifier,
-    /// The overall result.
+    /// The overall result: the checks', combined with the policy's when there is one.
     pub status: Status,
     /// How many checks ended each way.
     pub counts: Counts,
@@ -44,8 +44,59 @@ pub struct Report {
     pub contract: Option<ContractOverview>,
     /// Every check, in catalogue order.
     pub checks: Vec<Check>,
+    /// The result of checking the contract against a policy, when one was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<PolicyOutcome>,
     /// Who the refund and every CET pay; `None` when the contract could not be rebuilt.
     pub payouts: Option<Payouts>,
+}
+
+impl Report {
+    /// Attaches the result of a policy and folds its status into the report's.
+    pub fn with_policy(mut self, policy: PolicyOutcome) -> Self {
+        self.status = combine(self.status, policy.status);
+        self.policy = Some(policy);
+        self
+    }
+}
+
+/// The result of checking a contract against a policy.
+#[derive(Clone, Debug, Serialize)]
+pub struct PolicyOutcome {
+    /// The policy's name, if it has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// `fail` if any policy check fails, `incomplete` if one could not run, otherwise `pass`.
+    pub status: Status,
+    /// The policy's checks, one per expectation the policy states.
+    pub checks: Vec<Check>,
+}
+
+impl PolicyOutcome {
+    /// Collects `checks` under the status they add up to.
+    pub fn new(name: Option<String>, checks: Vec<Check>) -> Self {
+        let status = if checks.iter().any(|check| check.status == CheckStatus::Fail) {
+            Status::Fail
+        } else if checks.iter().any(|check| check.status == CheckStatus::Skip) {
+            Status::Incomplete
+        } else {
+            Status::Pass
+        };
+        Self {
+            name,
+            status,
+            checks,
+        }
+    }
+}
+
+/// The worse of two results: `fail` over `incomplete` over `pass`.
+pub const fn combine(left: Status, right: Status) -> Status {
+    match (left, right) {
+        (Status::Fail, _) | (_, Status::Fail) => Status::Fail,
+        (Status::Incomplete, _) | (_, Status::Incomplete) => Status::Incomplete,
+        (Status::Pass, Status::Pass) => Status::Pass,
+    }
 }
 
 /// The verifier that wrote a report.
@@ -174,8 +225,10 @@ pub struct CetPayouts {
     pub index: usize,
     /// The contract info it belongs to.
     pub contract_info: usize,
-    /// The outcome it settles: an enum outcome or a range of numeric values.
+    /// The outcome it settles as text: the enum outcome, or `first..last` for numeric values.
     pub outcome: String,
+    /// The outcome it settles.
+    pub settles: CetOutcome,
     /// The CET's transaction id.
     pub txid: String,
     /// Its outputs, in order.
@@ -258,6 +311,7 @@ pub fn report(verification: &Verification) -> Report {
         counts,
         contract: overview,
         checks: verification.checks.clone(),
+        policy: None,
         payouts,
     }
 }
@@ -362,27 +416,41 @@ fn maturity_epochs(info: &ddk_messages::oracle_msgs::OracleInfo) -> Vec<u32> {
 }
 
 /// What a CET settles: an enum outcome, or the numeric values it covers.
-#[derive(Clone, Debug)]
-enum Settles {
-    Enum(String),
-    Numeric(u64, u64),
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CetOutcome {
+    /// An enum outcome.
+    Enum {
+        /// The outcome string the oracle attests.
+        outcome: String,
+    },
+    /// A range of numeric outcomes.
+    Numeric {
+        /// The lowest value the CET settles.
+        first: u64,
+        /// The highest value the CET settles.
+        last: u64,
+    },
+    /// The CET could not be matched to an outcome.
     Unknown,
 }
 
-impl Settles {
+impl CetOutcome {
     fn label(&self, position: usize) -> String {
         match self {
-            Self::Enum(outcome) => outcome.clone(),
-            Self::Numeric(first, last) if first == last => format!("{first}"),
-            Self::Numeric(first, last) => format!("{first}..{last}"),
+            Self::Enum { outcome } => outcome.clone(),
+            Self::Numeric { first, last } if first == last => format!("{first}"),
+            Self::Numeric { first, last } => format!("{first}..{last}"),
             Self::Unknown => format!("CET {position}"),
         }
     }
 
-    fn covered_by(&self, outcome: &OverrideOutcome) -> bool {
-        match (self, outcome) {
-            (Self::Enum(cet), OverrideOutcome::Enum { outcome }) => cet == outcome,
-            (Self::Numeric(first, last), OverrideOutcome::Numeric { start, end }) => {
+    fn covered_by(&self, record: &OverrideOutcome) -> bool {
+        match (self, record) {
+            (Self::Enum { outcome }, OverrideOutcome::Enum { outcome: covered }) => {
+                outcome == covered
+            }
+            (Self::Numeric { first, last }, OverrideOutcome::Numeric { start, end }) => {
                 first >= start && last <= end
             }
             _ => false,
@@ -391,12 +459,14 @@ impl Settles {
 }
 
 /// What each CET of `info` settles, in CET order.
-fn settles(info: &ExecutionInfo, total: bitcoin::Amount) -> Vec<Settles> {
+fn settles(info: &ExecutionInfo, total: bitcoin::Amount) -> Vec<CetOutcome> {
     match &info.contract_descriptor {
         ExecutionDescriptor::Enum(descriptor) => descriptor
             .outcome_payouts
             .iter()
-            .map(|payout| Settles::Enum(payout.outcome.clone()))
+            .map(|payout| CetOutcome::Enum {
+                outcome: payout.outcome.clone(),
+            })
             .collect(),
         ExecutionDescriptor::Numerical(descriptor) => {
             let Ok(ranges) = descriptor.get_range_payouts(total) else {
@@ -423,7 +493,7 @@ fn settles(info: &ExecutionInfo, total: bitcoin::Amount) -> Vec<Settles> {
                     if position == last_position && numeric.has_diff_nb_digits() {
                         last = last.max(largest);
                     }
-                    Settles::Numeric(first, last)
+                    CetOutcome::Numeric { first, last }
                 })
                 .collect()
         }
@@ -434,7 +504,7 @@ fn payouts(offer: &OfferDlc, accept: &AcceptDlc, contract: &RebuiltContract) -> 
     let network = network(offer);
     let overrides = overrides(offer);
     let total = offer.get_total_collateral();
-    let label = |transaction: &Transaction, settles: Option<&Settles>| -> Vec<PayoutOutput> {
+    let label = |transaction: &Transaction, settles: Option<&CetOutcome>| -> Vec<PayoutOutput> {
         transaction
             .output
             .iter()
@@ -479,13 +549,17 @@ fn payouts(offer: &OfferDlc, accept: &AcceptDlc, contract: &RebuiltContract) -> 
             let Some(cet) = contract.transactions.cets.get(index) else {
                 continue;
             };
-            let settles = settled.get(position).cloned().unwrap_or(Settles::Unknown);
+            let settles = settled
+                .get(position)
+                .cloned()
+                .unwrap_or(CetOutcome::Unknown);
             cets.push(CetPayouts {
                 index,
                 contract_info: info_index,
                 outcome: settles.label(position),
-                txid: cet.compute_txid().to_string(),
                 outputs: label(cet, Some(&settles)),
+                settles,
+                txid: cet.compute_txid().to_string(),
             });
         }
     }
@@ -528,17 +602,19 @@ pub fn render_text(report: &Report) -> String {
         ),
     );
     let counts = report.counts;
-    line(
-        &mut out,
-        &format!(
-            "Result: {}  ({} passed, {} warned, {} failed, {} skipped)",
-            report.status.name().to_uppercase(),
-            counts.pass,
-            counts.warn,
-            counts.fail,
-            counts.skip
-        ),
+    let mut result = format!(
+        "Result: {}  ({} passed, {} warned, {} failed, {} skipped",
+        report.status.name().to_uppercase(),
+        counts.pass,
+        counts.warn,
+        counts.fail,
+        counts.skip
     );
+    if let Some(policy) = &report.policy {
+        result.push_str(&format!("; policy {}", policy.status.name()));
+    }
+    result.push(')');
+    line(&mut out, &result);
 
     if let Some(contract) = &report.contract {
         out.push('\n');
@@ -646,6 +722,34 @@ pub fn render_text(report: &Report) -> String {
                 check.detail
             ),
         );
+    }
+
+    if let Some(policy) = &report.policy {
+        out.push('\n');
+        line(
+            &mut out,
+            &match &policy.name {
+                Some(name) => format!("Policy {name}"),
+                None => "Policy".to_owned(),
+            },
+        );
+        let width = policy
+            .checks
+            .iter()
+            .map(|check| check.id.len())
+            .max()
+            .unwrap_or(0);
+        for check in &policy.checks {
+            line(
+                &mut out,
+                &format!(
+                    "  {:<4}  {:<width$}  {}",
+                    check.status.name(),
+                    check.id,
+                    check.detail
+                ),
+            );
+        }
     }
 
     if let Some(payouts) = &report.payouts {

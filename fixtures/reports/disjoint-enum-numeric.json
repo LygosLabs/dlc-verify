@@ -246,6 +246,10 @@
         "index": 0,
         "contract_info": 0,
         "outcome": "up",
+        "settles": {
+          "kind": "enum",
+          "outcome": "up"
+        },
         "txid": "337b62002ddd57ec367c49f05436831e73cbf172b7ea394fb04c2f905040bc25",
         "outputs": [
           {
@@ -263,6 +267,10 @@
         "index": 1,
         "contract_info": 0,
         "outcome": "down",
+        "settles": {
+          "kind": "enum",
+          "outcome": "down"
+        },
         "txid": "aa17de7b26ca915af8157a5eed37b42b0658dd87d92715e3df7a993d07cc642b",
         "outputs": [
           {
@@ -280,6 +288,10 @@
         "index": 2,
         "contract_info": 0,
         "outcome": "flat",
+        "settles": {
+          "kind": "enum",
+          "outcome": "flat"
+        },
         "txid": "486393d5542da33d8cfa9b346c555ab66602dd040aee116531f86d75ccffa323",
         "outputs": [
           {
@@ -306,6 +318,11 @@
         "index": 3,
         "contract_info": 1,
         "outcome": "0..319",
+        "settles": {
+          "kind": "numeric",
+          "first": 0,
+          "last": 319
+        },
         "txid": "05630a234a735935254480c12872a35bb666e932542e1bc0873c4c9c8667997f",
         "outputs": [
           {
@@ -323,6 +340,11 @@
         "index": 4,
         "contract_info": 1,
         "outcome": "320..359",
+        "settles": {
+          "kind": "numeric",
+          "first": 320,
+          "last": 359
+        },
         "txid": "7008fa56aa960ef0c2cb88227ae5d316db142ae41d0ebd30bcebf9c83ce7e982",
         "outputs": [
           {
@@ -349,6 +371,11 @@
         "index": 5,
         "contract_info": 1,
         "outcome": "360..399",
+        "settles": {
+          "kind": "numeric",
+          "first": 360,
+          "last": 399
+        },
         "txid": "e1c1bcb78bebcac83ea2c00fb1cbee8c03e3213bf3ab538c3632fc02189b1fcf",
         "outputs": [
           {
@@ -375,6 +402,11 @@
         "index": 6,
         "contract_info": 1,
         "outcome": "400..439",
+        "settles": {
+          "kind": "numeric",
+          "first": 400,
+          "last": 439
+        },
         "txid": "178803c8dbcaf81891984ab07d16587032866dd15e4f9176f944e62f02bb09d4",
         "outputs": [
           {
@@ -401,6 +433,11 @@
         "index": 7,
         "contract_info": 1,
         "outcome": "440..479",
+        "settles": {
+          "kind": "numeric",
+          "first": 440,
+          "last": 479
+        },
         "txid": "8d86ff07e204a84b850f607096550b4aac4a9e52d27a7c217ee617a8f25c26dc",
         "outputs": [
           {
@@ -427,6 +464,11 @@
         "index": 8,
         "contract_info": 1,
         "outcome": "480..519",
+        "settles": {
+          "kind": "numeric",
+          "first": 480,
+          "last": 519
+        },
         "txid": "506ea30d8b5efcdb5e8faae1f218108ea310f6b8b005219bbaef3e028c2d19bf",
         "outputs": [
           {
@@ -453,6 +495,11 @@
         "index": 9,
         "contract_info": 1,
         "outcome": "520..559",
+        "settles": {
+          "kind": "numeric",
+          "first": 520,
+          "last": 559
+        },
         "txid": "1290ceeef7c966776b07420502bc980fbcd8a2de1deb51666f53336959f329bd",
         "outputs": [
           {
@@ -479,6 +526,11 @@
         "index": 10,
         "contract_info": 1,
         "outcome": "560..599",
+        "settles": {
+          "kind": "numeric",
+          "first": 560,
+          "last": 599
+        },
         "txid": "448726461394b899e42618108bdf3c1bb922899252e5b9ee9db3f0a5e83a7bc5",
         "outputs": [
           {
@@ -505,6 +557,11 @@
         "index": 11,
         "contract_info": 1,
         "outcome": "600..639",
+        "settles": {
+          "kind": "numeric",
+          "first": 600,
+          "last": 639
+        },
         "txid": "98bc6ad830b39b4635fe23605decc2b2eb31cb250dcf548f3a6f79829a54da34",
         "outputs": [
           {
@@ -531,6 +588,11 @@
         "index": 12,
         "contract_info": 1,
         "outcome": "640..679",
+        "settles": {
+          "kind": "numeric",
+          "first": 640,
+          "last": 679
+        },
         "txid": "6dc710d31d95b6c500de6099ffa2396ce01bf75ca9643b5bb08f4088c276249a",
         "outputs": [
           {
@@ -557,6 +619,11 @@
         "index": 13,
         "contract_info": 1,
         "outcome": "680..1023",
+        "settles": {
+          "kind": "numeric",
+          "first": 680,
+          "last": 1023
+        },
         "txid": "dd9858cea6ce2cf140f9531e4c122373218effe6302264e6e146b8f69a37b3e4",
         "outputs": [
           {

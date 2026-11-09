@@ -173,3 +173,82 @@ fn verify_rejects_now_with_no_clock() {
     ]);
     assert_eq!(output.status.code(), Some(3));
 }
+
+#[test]
+fn verify_with_a_matching_policy_passes() {
+    let output = run(&[
+        "verify",
+        "fixtures/enum-payout-override.json",
+        "--now",
+        "1767139200",
+        "--policy",
+        "fixtures/policies/enum-payout-override.toml",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    let text = stdout(&output);
+    assert!(text.contains("policy pass"), "{text}");
+    assert!(text.contains("pass  policy.cet-payouts"), "{text}");
+
+    let output = run(&[
+        "verify",
+        "fixtures/numeric-payout-override.json",
+        "--now",
+        "1767139200",
+        "--format",
+        "json",
+        "--policy",
+        "fixtures/policies/numeric-payout-override.json",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&output))
+        .unwrap_or_else(|error| unreachable!("verify output is not JSON: {error}"));
+    assert_eq!(value["status"], "pass");
+    assert_eq!(value["policy"]["status"], "pass");
+}
+
+#[test]
+fn verify_with_a_policy_the_contract_breaks_fails() {
+    let output = run(&[
+        "verify",
+        "fixtures/enum-dual-funded.json",
+        "--now",
+        "1767139200",
+        "--policy",
+        "fixtures/policies/enum-payout-override.toml",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let text = stdout(&output);
+    assert!(text.contains("Result: FAIL"), "{text}");
+    assert!(text.contains("fail  policy.cet-payouts"), "{text}");
+}
+
+#[test]
+fn verify_rejects_a_bad_policy_file() {
+    let dir = std::env::temp_dir().join(format!("dlc-verify-policy-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|error| unreachable!("{error}"));
+    let path = dir.join("bad.toml");
+    std::fs::write(
+        &path,
+        "schema = \"dlc-verify.policy.v1\"\nnetwrok = \"regtest\"\n",
+    )
+    .unwrap_or_else(|error| unreachable!("{error}"));
+    let path_arg = path.display().to_string();
+    let bad = run(&[
+        "verify",
+        "fixtures/enum-dual-funded.json",
+        "--no-clock",
+        "--policy",
+        &path_arg,
+    ]);
+    let missing = run(&[
+        "verify",
+        "fixtures/enum-dual-funded.json",
+        "--no-clock",
+        "--policy",
+        "fixtures/policies/no-such-policy.toml",
+    ]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(bad.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("unknown field `netwrok`"));
+    assert_eq!(missing.status.code(), Some(3));
+}
