@@ -74,3 +74,102 @@ fn inspect_reads_messages_from_files() {
     assert_eq!(output.status.code(), Some(0));
     assert!(stdout(&output).contains("loan-matured-7932e4c2"));
 }
+
+fn fixture_value(name: &str) -> serde_json::Value {
+    let text = std::fs::read_to_string(repo_root().join("fixtures").join(format!("{name}.json")))
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    serde_json::from_str(&text).unwrap_or_else(|error| unreachable!("{error}"))
+}
+
+fn hex_field<'a>(value: &'a serde_json::Value, field: &str) -> &'a str {
+    value[field]
+        .as_str()
+        .unwrap_or_else(|| unreachable!("fixture has no {field}"))
+}
+
+#[test]
+fn verify_passes_a_signed_fixture() {
+    let output = run(&[
+        "verify",
+        "fixtures/enum-payout-override.json",
+        "--now",
+        "1767139200",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    let text = stdout(&output);
+    assert!(text.contains("Result: PASS"));
+    assert!(text.contains("third-party 100,000 sat to"));
+}
+
+#[test]
+fn verify_json_report() {
+    let output = run(&[
+        "verify",
+        "fixtures/enum-refund-to-accepter.json",
+        "--format",
+        "json",
+        "--no-clock",
+    ]);
+    // Without a clock the maturity check warns, which does not change the result.
+    assert_eq!(output.status.code(), Some(0));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&output))
+        .unwrap_or_else(|error| unreachable!("verify output is not JSON: {error}"));
+    assert_eq!(value["schema"], "dlc-verify.report.v1");
+    assert_eq!(value["status"], "pass");
+    assert_eq!(value["counts"]["warn"], 1);
+    assert_eq!(value["contract"]["network"], "testnet4");
+    assert_eq!(
+        value["payouts"]["refund"]["outputs"][0]["payee"],
+        "accepter"
+    );
+}
+
+#[test]
+fn verify_an_offer_alone_is_incomplete() {
+    let fixture = fixture_value("enum-dual-funded");
+    let output = run(&[
+        "verify",
+        "--offer",
+        hex_field(&fixture, "offer"),
+        "--no-clock",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).contains("Result: INCOMPLETE"));
+}
+
+#[test]
+fn verify_fails_a_tampered_sign_message() {
+    let fixture = fixture_value("enum-dual-funded");
+    // Bytes 6.. of a sign message are the contract id: flip a bit in its first byte.
+    let mut sign = hex_field(&fixture, "sign").to_owned();
+    let flipped =
+        u8::from_str_radix(&sign[12..14], 16).unwrap_or_else(|error| unreachable!("{error}")) ^ 1;
+    sign.replace_range(12..14, &format!("{flipped:02x}"));
+    let output = run(&[
+        "verify",
+        "--offer",
+        hex_field(&fixture, "offer"),
+        "--accept",
+        hex_field(&fixture, "accept"),
+        "--sign",
+        &sign,
+        "--now",
+        "1767139200",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let text = stdout(&output);
+    assert!(text.contains("Result: FAIL"));
+    assert!(text.contains("fail  sig.contract-id"));
+}
+
+#[test]
+fn verify_rejects_now_with_no_clock() {
+    let output = run(&[
+        "verify",
+        "fixtures/enum-dual-funded.json",
+        "--now",
+        "1",
+        "--no-clock",
+    ]);
+    assert_eq!(output.status.code(), Some(3));
+}

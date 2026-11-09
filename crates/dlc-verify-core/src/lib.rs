@@ -8,6 +8,7 @@ pub mod decode;
 pub mod input;
 pub mod inspect;
 pub mod network;
+pub mod report;
 pub mod summary;
 pub mod text;
 pub mod time;
@@ -16,6 +17,7 @@ pub mod verify;
 pub use decode::{DecodeFailure, Messages, decode};
 pub use input::{Input, InputError, MessageKind};
 pub use inspect::{Inspection, inspect};
+pub use report::{Payee, Report, render_text, report};
 pub use verify::{Check, CheckStatus, Options, Status, Verification, verify};
 
 /// The version of this crate.

@@ -1,0 +1,307 @@
+{
+  "schema": "dlc-verify.report.v1",
+  "verifier": {
+    "name": "dlc-verify",
+    "version": "0.1.0",
+    "ddk": "2.0.0-rc.10"
+  },
+  "status": "pass",
+  "counts": {
+    "pass": 27,
+    "warn": 0,
+    "fail": 0,
+    "skip": 0
+  },
+  "contract": {
+    "network": "regtest",
+    "temporary_contract_id": "ec7b8990ff45d51464cf9c04319e6d97f97d487ebd8c6ac989c576f19d6015bc",
+    "contract_id": "8d513f71edd785c8f9c2402dac658dcf77f670888408d3b23e73c8c14029abfb",
+    "total_collateral_sat": 100000,
+    "offerer": {
+      "collateral_sat": 50000,
+      "funding_pubkey": "02b9061abab4ad98d48f509147c5ad04e08752aaeb9c340247d61b49d11bd7bc29",
+      "payout": {
+        "hex": "0014b0a09bed4b75028339316d084ebd57835e6f3178",
+        "address": "bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc",
+        "kind": "p2wpkh"
+      },
+      "change": {
+        "hex": "00148115d89c140877515348ae2ef0560886b106c251",
+        "address": "bcrt1qsy2a38q5ppm4z56g4ch0q4sgs6csdsj3av3aal",
+        "kind": "p2wpkh"
+      }
+    },
+    "accepter": {
+      "collateral_sat": 50000,
+      "funding_pubkey": "0304c0d42d4cd3f927c5dc2d2bbc95597151ea25589cee48811650a5ea65dfc9b4",
+      "payout": {
+        "hex": "00148d4f1b3f8247e49ae55bce282bb30f4936f5a59a",
+        "address": "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg",
+        "kind": "p2wpkh"
+      },
+      "change": {
+        "hex": "00141ff9c715fac1cff5302fed2116cc326ce83ac534",
+        "address": "bcrt1qrluuw906c88l2vp0a5s3dnpjdn5r43f5mrxy7f",
+        "kind": "p2wpkh"
+      }
+    },
+    "fee_rate_per_vb": 2,
+    "fee_rule": "counterparty-payout",
+    "contract_flags": [],
+    "oracle_maturity": {
+      "earliest": {
+        "unix": 1767225600,
+        "utc": "2026-01-01T00:00:00Z"
+      },
+      "latest": {
+        "unix": 1767225600,
+        "utc": "2026-01-01T00:00:00Z"
+      }
+    },
+    "cet_locktime": {
+      "value": 1767225600,
+      "kind": "time",
+      "utc": "2026-01-01T00:00:00Z"
+    },
+    "refund_locktime": {
+      "value": 1767830400,
+      "kind": "time",
+      "utc": "2026-01-08T00:00:00Z"
+    },
+    "funding_output": {
+      "txid": "612ab6e1129250dc9d0ddc299dfbe0588e8b38f63984b97bb7b6be30dd49be47",
+      "vout": 0,
+      "value_sat": 100340
+    },
+    "payout_overrides": []
+  },
+  "checks": [
+    {
+      "id": "decode.offer",
+      "status": "pass",
+      "detail": "895 bytes, canonical encoding"
+    },
+    {
+      "id": "decode.accept",
+      "status": "pass",
+      "detail": "1772 bytes, canonical encoding"
+    },
+    {
+      "id": "decode.sign",
+      "status": "pass",
+      "detail": "1669 bytes, canonical encoding"
+    },
+    {
+      "id": "decode.unknown-tlvs",
+      "status": "pass",
+      "detail": "no TLV records"
+    },
+    {
+      "id": "structure.protocol-version",
+      "status": "pass",
+      "detail": "version 1 (offer, accept, sign)"
+    },
+    {
+      "id": "structure.temp-id",
+      "status": "pass",
+      "detail": "ec7b8990ff45d51464cf9c04319e6d97f97d487ebd8c6ac989c576f19d6015bc on both messages"
+    },
+    {
+      "id": "structure.contract-flags",
+      "status": "pass",
+      "detail": "none"
+    },
+    {
+      "id": "structure.collateral",
+      "status": "pass",
+      "detail": "100000 sat total: offerer 50000 sat, accepter 50000 sat"
+    },
+    {
+      "id": "structure.serial-ids",
+      "status": "pass",
+      "detail": "2 funding input, 3 funding transaction output and 2 payout serial ids, all distinct"
+    },
+    {
+      "id": "structure.funding-inputs",
+      "status": "pass",
+      "detail": "offerer: 1 input(s), 150000 sat; accepter: 1 input(s), 150000 sat"
+    },
+    {
+      "id": "structure.fee-rate",
+      "status": "pass",
+      "detail": "2 sat/vB"
+    },
+    {
+      "id": "structure.limits",
+      "status": "pass",
+      "detail": "1 contract info(s), 3 oracle announcement(s)"
+    },
+    {
+      "id": "oracle.announcement-signature",
+      "status": "pass",
+      "detail": "3 announcement signature(s) from 3 oracle(s) verify"
+    },
+    {
+      "id": "oracle.outcome-coverage",
+      "status": "pass",
+      "detail": "every outcome the oracles can attest has a payout (1 contract info(s))"
+    },
+    {
+      "id": "oracle.maturity",
+      "status": "pass",
+      "detail": "oracle events mature at 2026-01-01T00:00:00Z; the earliest is in 1d 0h"
+    },
+    {
+      "id": "locktime.cet",
+      "status": "pass",
+      "detail": "2026-01-01T00:00:00Z, at or before the earliest oracle maturity"
+    },
+    {
+      "id": "locktime.refund",
+      "status": "pass",
+      "detail": "2026-01-08T00:00:00Z, 7d 0h after the earliest oracle maturity"
+    },
+    {
+      "id": "locktime.units",
+      "status": "pass",
+      "detail": "CET locktime is a time, refund locktime is a time"
+    },
+    {
+      "id": "tx.build",
+      "status": "pass",
+      "detail": "rebuilt the funding transaction, 3 CET(s) and the refund (fee rule counterparty-payout)"
+    },
+    {
+      "id": "tx.funding-output",
+      "status": "pass",
+      "detail": "output 0 of 612ab6e1129250dc9d0ddc299dfbe0588e8b38f63984b97bb7b6be30dd49be47: 100340 sat to the 2-of-2 of both funding keys"
+    },
+    {
+      "id": "tx.contract-id",
+      "status": "pass",
+      "detail": "8d513f71edd785c8f9c2402dac658dcf77f670888408d3b23e73c8c14029abfb"
+    },
+    {
+      "id": "sig.accept.cet-adaptors",
+      "status": "pass",
+      "detail": "9 adaptor signature(s) verify against 3 CET(s)"
+    },
+    {
+      "id": "sig.accept.refund",
+      "status": "pass",
+      "detail": "the accepter's refund signature verifies"
+    },
+    {
+      "id": "sig.offer.cet-adaptors",
+      "status": "pass",
+      "detail": "9 adaptor signature(s) verify against 3 CET(s)"
+    },
+    {
+      "id": "sig.offer.refund",
+      "status": "pass",
+      "detail": "the offerer's refund signature verifies"
+    },
+    {
+      "id": "sig.offer.funding",
+      "status": "pass",
+      "detail": "1 offerer funding witness(es) verify; the accepter's are not in the messages"
+    },
+    {
+      "id": "sig.contract-id",
+      "status": "pass",
+      "detail": "the sign message names the rebuilt contract 8d513f71edd785c8f9c2402dac658dcf77f670888408d3b23e73c8c14029abfb"
+    }
+  ],
+  "payouts": {
+    "refund": {
+      "txid": "f0f7d4ed11c33021dcaa08eaa23d32575f575afc1109248bef0e6f9589c949b5",
+      "locktime": {
+        "value": 1767830400,
+        "kind": "time",
+        "utc": "2026-01-08T00:00:00Z"
+      },
+      "outputs": [
+        {
+          "payee": "offerer",
+          "value_sat": 50000,
+          "script": {
+            "hex": "0014b0a09bed4b75028339316d084ebd57835e6f3178",
+            "address": "bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc",
+            "kind": "p2wpkh"
+          }
+        },
+        {
+          "payee": "accepter",
+          "value_sat": 50000,
+          "script": {
+            "hex": "00148d4f1b3f8247e49ae55bce282bb30f4936f5a59a",
+            "address": "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg",
+            "kind": "p2wpkh"
+          }
+        }
+      ]
+    },
+    "cets": [
+      {
+        "index": 0,
+        "contract_info": 0,
+        "outcome": "up",
+        "txid": "337b62002ddd57ec367c49f05436831e73cbf172b7ea394fb04c2f905040bc25",
+        "outputs": [
+          {
+            "payee": "offerer",
+            "value_sat": 100000,
+            "script": {
+              "hex": "0014b0a09bed4b75028339316d084ebd57835e6f3178",
+              "address": "bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc",
+              "kind": "p2wpkh"
+            }
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "contract_info": 0,
+        "outcome": "down",
+        "txid": "aa17de7b26ca915af8157a5eed37b42b0658dd87d92715e3df7a993d07cc642b",
+        "outputs": [
+          {
+            "payee": "accepter",
+            "value_sat": 100000,
+            "script": {
+              "hex": "00148d4f1b3f8247e49ae55bce282bb30f4936f5a59a",
+              "address": "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg",
+              "kind": "p2wpkh"
+            }
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "contract_info": 0,
+        "outcome": "flat",
+        "txid": "486393d5542da33d8cfa9b346c555ab66602dd040aee116531f86d75ccffa323",
+        "outputs": [
+          {
+            "payee": "offerer",
+            "value_sat": 50000,
+            "script": {
+              "hex": "0014b0a09bed4b75028339316d084ebd57835e6f3178",
+              "address": "bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc",
+              "kind": "p2wpkh"
+            }
+          },
+          {
+            "payee": "accepter",
+            "value_sat": 50000,
+            "script": {
+              "hex": "00148d4f1b3f8247e49ae55bce282bb30f4936f5a59a",
+              "address": "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg",
+              "kind": "p2wpkh"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -19,5 +19,8 @@ secp256k1-zkp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[dev-dependencies]
+ddk = { workspace = true }
+
 [lints]
 workspace = true

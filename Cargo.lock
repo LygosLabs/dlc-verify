@@ -402,6 +402,7 @@ name = "dlc-verify-core"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "ddk",
  "ddk-dlc",
  "ddk-manager",
  "ddk-messages",

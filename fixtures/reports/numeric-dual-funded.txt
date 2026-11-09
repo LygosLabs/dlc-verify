@@ -1,0 +1,61 @@
+dlc-verify 0.1.0 (DDK 2.0.0-rc.10)
+Result: PASS  (27 passed, 0 warned, 0 failed, 0 skipped)
+
+Contract
+  Network           regtest
+  Contract id       29c558ac8cd1f3f50bce096185aa5d3daa842b60a233315b74b3a7aee239f65a
+  Temporary id      48efee4d9e43a32996c3d5481851bd65240f13969bb78820c305199e3f70481d
+  Collateral        100,000 sat: offerer 50,000, accepter 50,000
+  Fee rate          2 sat/vB, CET fee rule counterparty-payout
+  Flags             none
+  Oracle maturity   2026-01-01T00:00:00Z
+  CET locktime      2026-01-01T00:00:00Z
+  Refund locktime   2026-01-08T00:00:00Z
+  Funding output    612ab6e1129250dc9d0ddc299dfbe0588e8b38f63984b97bb7b6be30dd49be47:0, 100,340 sat
+  Offerer pays to   bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc
+  Accepter pays to  bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg
+
+Checks
+  pass  decode.offer                   885 bytes, canonical encoding
+  pass  decode.accept                  4850 bytes, canonical encoding
+  pass  decode.sign                    4747 bytes, canonical encoding
+  pass  decode.unknown-tlvs            no TLV records
+  pass  structure.protocol-version     version 1 (offer, accept, sign)
+  pass  structure.temp-id              48efee4d9e43a32996c3d5481851bd65240f13969bb78820c305199e3f70481d on both messages
+  pass  structure.contract-flags       none
+  pass  structure.collateral           100000 sat total: offerer 50000 sat, accepter 50000 sat
+  pass  structure.serial-ids           2 funding input, 3 funding transaction output and 2 payout serial ids, all distinct
+  pass  structure.funding-inputs       offerer: 1 input(s), 150000 sat; accepter: 1 input(s), 150000 sat
+  pass  structure.fee-rate             2 sat/vB
+  pass  structure.limits               1 contract info(s), 1 oracle announcement(s)
+  pass  oracle.announcement-signature  1 announcement signature(s) from 1 oracle(s) verify
+  pass  oracle.outcome-coverage        every outcome the oracles can attest has a payout (1 contract info(s))
+  pass  oracle.maturity                oracle events mature at 2026-01-01T00:00:00Z; the earliest is in 1d 0h
+  pass  locktime.cet                   2026-01-01T00:00:00Z, at or before the earliest oracle maturity
+  pass  locktime.refund                2026-01-08T00:00:00Z, 7d 0h after the earliest oracle maturity
+  pass  locktime.units                 CET locktime is a time, refund locktime is a time
+  pass  tx.build                       rebuilt the funding transaction, 11 CET(s) and the refund (fee rule counterparty-payout)
+  pass  tx.funding-output              output 0 of 612ab6e1129250dc9d0ddc299dfbe0588e8b38f63984b97bb7b6be30dd49be47: 100340 sat to the 2-of-2 of both funding keys
+  pass  tx.contract-id                 29c558ac8cd1f3f50bce096185aa5d3daa842b60a233315b74b3a7aee239f65a
+  pass  sig.accept.cet-adaptors        28 adaptor signature(s) verify against 11 CET(s)
+  pass  sig.accept.refund              the accepter's refund signature verifies
+  pass  sig.offer.cet-adaptors         28 adaptor signature(s) verify against 11 CET(s)
+  pass  sig.offer.refund               the offerer's refund signature verifies
+  pass  sig.offer.funding              1 offerer funding witness(es) verify; the accepter's are not in the messages
+  pass  sig.contract-id                the sign message names the rebuilt contract 29c558ac8cd1f3f50bce096185aa5d3daa842b60a233315b74b3a7aee239f65a
+
+Refund (from 2026-01-08T00:00:00Z)
+  offerer 50,000 sat, accepter 50,000 sat
+
+CET payouts (11)
+  0..319     accepter 100,000 sat
+  320..359   offerer 10,000 sat, accepter 90,000 sat
+  360..399   offerer 20,000 sat, accepter 80,000 sat
+  400..439   offerer 30,000 sat, accepter 70,000 sat
+  440..479   offerer 40,000 sat, accepter 60,000 sat
+  480..519   offerer 50,000 sat, accepter 50,000 sat
+  520..559   offerer 60,000 sat, accepter 40,000 sat
+  560..599   offerer 70,000 sat, accepter 30,000 sat
+  600..639   offerer 80,000 sat, accepter 20,000 sat
+  640..679   offerer 90,000 sat, accepter 10,000 sat
+  680..1023  offerer 100,000 sat

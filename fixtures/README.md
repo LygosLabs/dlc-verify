@@ -32,3 +32,13 @@ and the funding transaction's witnesses stay the same; the sign message changes)
 - `funding_transaction`: the fully signed funding transaction.
 - `attestations`: oracle attestations for one outcome (`hex` is the TLV-encoded attestation), for
   settlement tests. `enum-refund-to-accepter` has none.
+
+## Report snapshots
+
+`reports/<vector>.json` and `reports/<vector>.txt` are the `dlc-verify verify --format json` and
+text reports of each vector at its `now`. `crates/dlc-verify-core/tests/report.rs` compares them;
+after an intended change to the report, rewrite them with:
+
+```sh
+UPDATE_SNAPSHOTS=1 cargo test -p dlc-verify-core --test report
+```
