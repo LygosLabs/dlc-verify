@@ -387,3 +387,66 @@ fn the_refund_to_accepter_flag_is_named() {
     assert_eq!(flags.status, CheckStatus::Pass);
     assert_ne!(flags.detail, "none");
 }
+
+// The findings of the review of the TypeScript verifier (PR #10), pinned against the Rust one.
+
+#[test]
+fn a_contract_outcome_the_oracle_never_announced_fails() {
+    assert_fails_on("enum-dual-funded", "oracle.outcome-coverage", |messages| {
+        let ContractInfo::SingleContractInfo(single) = &mut messages.offer.contract_info else {
+            unreachable!("a single contract info")
+        };
+        let ContractDescriptor::EnumeratedContractDescriptor(descriptor) =
+            &mut single.contract_info.contract_descriptor
+        else {
+            unreachable!("an enum descriptor")
+        };
+        if let Some(payout) = descriptor.payouts.first_mut() {
+            payout.outcome.push(' ');
+        }
+    });
+}
+
+#[test]
+fn a_refund_without_a_locktime_fails() {
+    assert_fails_on("enum-dual-funded", "locktime.refund", |messages| {
+        messages.offer.refund_locktime = 0;
+    });
+}
+
+/// The offer with one more TLV record of `tlv_type` (below 0xfd) after its fixed fields.
+fn with_tlv(name: &str, tlv_type: u8) -> (Input, Options) {
+    let (mut input, options) = fixture(name);
+    input.offer.extend_from_slice(&[tlv_type, 1, 0]);
+    (input, options)
+}
+
+#[test]
+fn an_unknown_even_tlv_fails() {
+    let (input, options) = with_tlv("enum-dual-funded", 0x10);
+    let verification = verify(&input, &options);
+    assert_eq!(
+        verification.status,
+        Status::Fail,
+        "{}",
+        report(&verification)
+    );
+    assert_eq!(
+        status(&verification, "decode.unknown-tlvs"),
+        CheckStatus::Fail,
+        "{}",
+        report(&verification)
+    );
+}
+
+#[test]
+fn an_unknown_odd_tlv_warns() {
+    let (input, options) = with_tlv("enum-dual-funded", 0x11);
+    let verification = verify(&input, &options);
+    assert_eq!(
+        status(&verification, "decode.unknown-tlvs"),
+        CheckStatus::Warn,
+        "{}",
+        report(&verification)
+    );
+}
