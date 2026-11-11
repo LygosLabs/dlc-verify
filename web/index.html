@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <meta name="referrer" content="no-referrer">
+    <meta name="color-scheme" content="light dark">
+    <title>DLC Verify</title>
+    <meta
+      name="description"
+      content="Verify a Discreet Log Contract's messages, and complete its CETs and refund, in your browser."
+    >
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <link rel="modulepreload" href="pkg/dlc_verify_wasm.js">
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="./">
+        <img src="favicon.svg" alt="" width="22" height="22">
+        <span>dlc-verify</span>
+      </a>
+      <span class="local">Runs in this page. Nothing is uploaded.</span>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="verify-title">
+        <h1 id="verify-title">Verify a DLC</h1>
+        <p class="lead">
+          Paste a Discreet Log Contract's offer, accept and sign messages. dlc-verify decodes them,
+          rebuilds the funding transaction, every CET and the refund, and checks every signature,
+          here in the page.
+        </p>
+
+        <div class="tabs" role="tablist" aria-label="How to give the messages">
+          <button type="button" role="tab" id="tab-bundle" aria-selected="true" aria-controls="panel-bundle">
+            One bundle
+          </button>
+          <button type="button" role="tab" id="tab-separate" aria-selected="false" aria-controls="panel-separate" tabindex="-1">
+            Separate messages
+          </button>
+        </div>
+
+        <div id="panel-bundle" role="tabpanel" aria-labelledby="tab-bundle" class="panel">
+          <label for="bundle" class="field-label">
+            A JSON bundle <code>{"offer", "accept", "sign"}</code>, or an offer in hex
+          </label>
+          <textarea id="bundle" class="messages" rows="8" spellcheck="false" autocomplete="off"
+            placeholder='{"offer": "a71a…", "accept": "a71c…", "sign": "a71e…"}' data-input></textarea>
+          <div class="file-row">
+            <label class="button quiet file">
+              Open a file
+              <input type="file" id="bundle-file" accept=".json,.txt,.hex,application/json,text/plain">
+            </label>
+            <span class="hint">or drop one on the box</span>
+          </div>
+        </div>
+
+        <div id="panel-separate" role="tabpanel" aria-labelledby="tab-separate" class="panel" hidden>
+          <label for="offer" class="field-label">Offer <span class="hint">hex</span></label>
+          <textarea id="offer" class="messages" rows="4" spellcheck="false" autocomplete="off" data-input></textarea>
+          <label for="accept" class="field-label">Accept <span class="hint">hex, optional</span></label>
+          <textarea id="accept" class="messages" rows="3" spellcheck="false" autocomplete="off" data-input></textarea>
+          <label for="sign" class="field-label">Sign <span class="hint">hex, optional</span></label>
+          <textarea id="sign" class="messages" rows="3" spellcheck="false" autocomplete="off" data-input></textarea>
+        </div>
+
+        <details class="expect" id="expect">
+          <summary>
+            <span>Check the terms you expect</span>
+            <span class="hint">optional</span>
+          </summary>
+          <p class="hint">
+            The checks above say the messages are consistent and signed. A policy says whether they
+            are the contract you agreed to: amounts, keys, payout addresses, oracles, dates.
+          </p>
+          <fieldset class="choice" id="policy-mode">
+            <legend class="sr-only">Expected terms</legend>
+            <label><input type="radio" name="policy-mode" value="none" checked data-input> None</label>
+            <label><input type="radio" name="policy-mode" value="profile" data-input> A profile</label>
+            <label><input type="radio" name="policy-mode" value="policy" data-input> A policy file</label>
+          </fieldset>
+
+          <div id="profile-fields" hidden>
+            <label for="profile" class="field-label">Profile</label>
+            <select id="profile" data-input></select>
+            <p class="hint" id="profile-about"></p>
+            <label for="terms" class="field-label">Terms <span class="hint">TOML or JSON, optional</span></label>
+            <textarea id="terms" rows="6" spellcheck="false" autocomplete="off" data-input
+              placeholder='collateral_sat = 100000&#10;[lender]&#10;payout = "bc1q…"'></textarea>
+            <label class="button quiet file">
+              Open terms
+              <input type="file" id="terms-file" accept=".toml,.json,.txt,application/json,text/plain">
+            </label>
+          </div>
+
+          <div id="policy-fields" hidden>
+            <label for="policy" class="field-label">Policy <span class="hint">TOML or JSON</span></label>
+            <textarea id="policy" rows="8" spellcheck="false" autocomplete="off" data-input></textarea>
+            <label class="button quiet file">
+              Open a policy
+              <input type="file" id="policy-file" accept=".toml,.json,.txt,application/json,text/plain">
+            </label>
+          </div>
+        </details>
+
+        <div class="clock">
+          <label>
+            <input type="checkbox" id="use-clock" checked data-input>
+            Use this browser's clock for the maturity and locktime checks
+          </label>
+          <span class="mono hint" id="clock-now"></span>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="verify" class="button primary" disabled>Verify</button>
+          <p id="form-status" class="form-status" role="status">Loading the verifier…</p>
+        </div>
+      </section>
+
+      <section id="result" hidden>
+        <p id="stale" class="stale" hidden>
+          The messages or terms changed since this report. Verify again to update it.
+        </p>
+
+        <div id="verdict" class="verdict" role="status" aria-live="polite">
+          <h2 id="verdict-title"></h2>
+          <p id="verdict-detail"></p>
+          <p id="verdict-clock" class="hint"></p>
+        </div>
+
+        <section class="card" id="contract-card" aria-labelledby="contract-title">
+          <h2 id="contract-title">Contract</h2>
+          <dl id="contract" class="facts"></dl>
+        </section>
+
+        <section class="card" aria-labelledby="checks-title">
+          <div class="card-head">
+            <h2 id="checks-title">Checks</h2>
+            <label class="hint"><input type="checkbox" id="only-problems"> Only warnings and failures</label>
+          </div>
+          <div class="table-wrap">
+            <table class="checks">
+              <thead><tr><th scope="col">Result</th><th scope="col">Check</th><th scope="col">Detail</th></tr></thead>
+              <tbody id="checks"></tbody>
+            </table>
+          </div>
+          <p id="checks-empty" class="hint" hidden>No warnings or failures.</p>
+        </section>
+
+        <section class="card" id="policy-card" aria-labelledby="policy-title" hidden>
+          <h2 id="policy-title">Expected terms</h2>
+          <ul id="policy-notes" class="notes"></ul>
+          <div class="table-wrap">
+            <table class="checks">
+              <thead><tr><th scope="col">Result</th><th scope="col">Check</th><th scope="col">Detail</th></tr></thead>
+              <tbody id="policy-checks"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="payouts-card" aria-labelledby="payouts-title">
+          <h2 id="payouts-title">Who gets paid</h2>
+          <p class="hint">
+            What each transaction pays, as rebuilt from the messages. A third party is paid through a
+            payout-script override (TLV 65005), a liquidator for example.
+          </p>
+          <h3>Refund <span id="refund-from" class="hint"></span></h3>
+          <ul id="refund-outputs" class="outputs"></ul>
+          <h3>CETs <span id="cet-count" class="hint"></span></h3>
+          <div class="table-wrap">
+            <table class="cets">
+              <thead><tr><th scope="col">CET</th><th scope="col">Outcome</th><th scope="col">Pays</th></tr></thead>
+              <tbody id="cets"></tbody>
+            </table>
+          </div>
+          <button type="button" id="more-cets" class="button quiet" hidden></button>
+        </section>
+
+        <section class="card" aria-labelledby="report-title">
+          <div class="card-head">
+            <h2 id="report-title">Report</h2>
+            <div class="buttons">
+              <button type="button" class="button quiet" id="copy-report">Copy text</button>
+              <button type="button" class="button quiet" id="download-report">Download JSON</button>
+            </div>
+          </div>
+          <p class="hint">
+            The same report <code>dlc-verify verify</code> prints. Run the command-line tool to check
+            this page's answer independently.
+          </p>
+          <details>
+            <summary>Show the text report</summary>
+            <pre id="report-text" class="report"></pre>
+          </details>
+        </section>
+
+        <section class="card" id="close-card" aria-labelledby="close-title">
+          <h2 id="close-title">Close the contract</h2>
+          <p class="hint">
+            The messages already hold both parties' signatures. With the oracle's attestation they
+            complete the CET for the attested outcome; after the refund locktime they complete the
+            refund. No keys are needed and nothing is broadcast: copy the transaction to a Bitcoin
+            node or block explorer.
+          </p>
+          <div class="split">
+            <div class="pane">
+              <h3>Settle with an attestation</h3>
+              <label for="attestations" class="field-label">
+                Attestation <span class="hint">TLV hex (starts <code>fdd868</code>), or JSON</span>
+              </label>
+              <textarea id="attestations" rows="4" spellcheck="false" autocomplete="off"></textarea>
+              <p id="attestations-hint" class="hint"></p>
+              <button type="button" id="settle" class="button">Build the CET</button>
+            </div>
+            <div class="pane">
+              <h3>Refund</h3>
+              <p id="refund-when" class="hint"></p>
+              <button type="button" id="refund" class="button">Build the refund</button>
+            </div>
+          </div>
+          <p id="close-status" class="form-status" role="status"></p>
+
+          <div id="settlement" class="settlement" hidden>
+            <h3 id="settlement-title"></h3>
+            <p id="settlement-warning" class="warning" hidden></p>
+            <dl id="settlement-facts" class="facts"></dl>
+            <label for="settlement-tx" class="field-label">Signed transaction</label>
+            <textarea id="settlement-tx" class="messages" rows="5" readonly spellcheck="false"></textarea>
+            <div class="buttons">
+              <button type="button" class="button quiet" id="copy-tx">Copy</button>
+              <button type="button" class="button quiet" id="download-tx">Download</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span id="version">dlc-verify</span>
+      <a href="https://github.com/LygosLabs/dlc-verify">Source and command-line tool</a>
+    </footer>
+  </body>
+</html>

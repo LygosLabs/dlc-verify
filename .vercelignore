@@ -1,8 +1,9 @@
-pnpm-lock.yaml
+# CI deploys only web/, prebuilt. Keep build output and anything private out of a deploy run
+# from a local checkout.
+target
 node_modules
 dist
-.vercel
-.env.local
-.env*.local
+.claude
+.env*
 operator-*.json
 *.pdf

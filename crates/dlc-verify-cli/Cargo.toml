@@ -1,0 +1,23 @@
+[package]
+name = "dlc-verify-cli"
+description = "Command-line DLC message verifier"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "dlc-verify"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+dlc-verify-core = { workspace = true }
+dlc-verify-policy = { workspace = true }
+dlc-verify-settle = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,38 @@
+# lygos-midnight terms for fixtures/midnight-liquidator.json:
+#   dlc-verify verify fixtures/midnight-liquidator.json --profile lygos-midnight \
+#     --terms fixtures/terms/midnight-liquidator.toml
+network = "regtest"
+collateral_sat = 100000
+maturity = 1767225600              # 2026-01-01T00:00:00Z, the market's maturity
+first_mint = true
+max_fee_rate_per_vb = 2
+# The fixture's test oracle. Real Midnight keys go in the oracle registry.
+oracle_pubkeys = ["7fb4ccd77b26759a3d266465816c45e580c2a5cdb979692d38dccf69978d50ee"]
+
+[borrower]
+funding_pubkey = "02b9061abab4ad98d48f509147c5ad04e08752aaeb9c340247d61b49d11bd7bc29"
+payout = "bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc"
+
+[lender]
+funding_pubkey = "0304c0d42d4cd3f927c5dc2d2bbc95597151ea25589cee48811650a5ea65dfc9b4"
+payout = "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg"
+
+# Paid through a payout-script override (TLV 65005).
+[[liquidators]]
+address = "0x1111111111111111111111111111111111111111"
+payout = "bcrt1q3qr7lswmh25nplahuj3m474ujs6vjvpu6976ja"
+
+# Paid at the lender's own script, so no override.
+[[liquidators]]
+address = "0x2222222222222222222222222222222222222222"
+payout = "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg"
+
+# The terms the oracle's event id commits to.
+[event]
+chain_id = 8453
+originator = "0x5656565656565656565656565656565656565656"
+market_id = "0xabababababababababababababababababababababababababababababababab"
+request_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+controller = "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
+mint_deadline = 1764633600
+announced_at = 1767052800

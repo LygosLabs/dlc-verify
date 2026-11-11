@@ -1,0 +1,26 @@
+[package]
+name = "dlc-verify-core"
+description = "Verify DLC offer, accept and sign messages by rebuilding the contract with DDK"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bitcoin = { workspace = true }
+ddk-dlc = { workspace = true }
+ddk-manager = { workspace = true }
+ddk-messages = { workspace = true }
+hex = { workspace = true }
+lightning = { workspace = true }
+secp256k1-zkp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+ddk = { workspace = true }
+
+[lints]
+workspace = true

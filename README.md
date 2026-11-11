@@ -1,294 +1,174 @@
-# DLC Verify
+# dlc-verify
 
-An open-source tool for independently verifying DLC (Discreet Log Contract) messages before signing. Paste your `DlcOffer` and `DlcAccept` hex to get a human-readable breakdown of contract terms plus cryptographic verification of the adaptor signatures.
+Check a Discreet Log Contract before you sign or fund it.
 
-DLC Verify is currently focused on Lygos-style enumerated loan DLCs, but it is designed to be run locally, self-hosted, and reused for similar DLCs that follow the same message and transaction structure.
+dlc-verify reads a DLC's offer, accept and sign messages, rebuilds the funding transaction, every
+CET and the refund with [dlcdevkit](https://github.com/bennyhodl/dlcdevkit) (DDK), and checks
+every signature in them. It shows who each transaction pays, checks the terms you expected, and
+can complete a CET or the refund from the messages alone, without keys.
 
----
+It runs on your machine, as a command-line tool or as a static web page. It sends nothing
+anywhere.
 
-## Screenshots
+```console
+$ dlc-verify verify fixtures/enum-payout-override.json --now 1767139200
+dlc-verify 2.0.0 (DDK 2.0.0-rc.10)
+Result: PASS  (27 passed, 0 warned, 0 failed, 0 skipped)
 
-**Paste your DLC messages:**
+Contract
+  Network           regtest
+  Contract id       bab1e6746a92540cb879cadcad6d64b88d83dddc4186664ff9d29c28acc038a9
+  Collateral        100,000 sat: offerer 50,000, accepter 50,000
+  Oracle maturity   2026-01-01T00:00:00Z
+  Refund locktime   2026-01-08T00:00:00Z
+  Third party       bcrt1q3qr7lswmh25nplahuj3m474ujs6vjvpu6976ja for outcome "down"
+  ...
 
-![Input form](assets/input_form.png)
+Checks
+  pass  decode.offer                   571 bytes, canonical encoding
+  pass  oracle.announcement-signature  1 announcement signature(s) from 1 oracle(s) verify
+  pass  sig.accept.cet-adaptors        3 adaptor signature(s) verify against 3 CET(s)
+  ...
 
-**Valid verification result:**
-
-![Valid verification](assets/verification_valid.png)
-
-**Oracle pubkey mismatch detected:**
-
-![Oracle mismatch](assets/verification_mismatch.png)
-
----
-
-## Why this exists
-
-DLC contract messages are opaque binary blobs. If someone sends you a `DlcOffer` or `DlcAccept`, there is usually no easy way to inspect what it actually encodes without specialized tooling. DLC Verify closes that gap.
-
-**This is a "don't trust, verify" tool for enumerated DLC contracts.**
-
-- Inspect payout outcomes and collateral splits before signing
-- Verify oracle identity, event IDs, locktimes, and funding data
-- Confirm CET adaptor signatures are cryptographically valid
-- Verify both parties' CET adaptor signatures and refund signatures
-- Apply explicit lender/oracle/collateral/event-ID policy and return a deterministic attestation payload
-- Run it locally or self-host it without trusting a third-party backend
-
----
-
-## What it verifies
-
-### Structural verification (message parsing)
-
-- Contract type and collateral amounts
-- All outcome payouts (e.g. `repaid`, `liquidated-by-price-threshold`)
-- Oracle public key and event ID
-- Oracle announcement Schnorr signature validity
-- CET maturity and refund locktime
-- Fee rate
-- Both parties' funding pubkeys and the reconstructed 2-of-2 P2WSH address
-- Funding inputs from offerer and accepter
-- Contract ID (computed, both RPC and internal-txid conventions)
-
-### Adaptor signature verification (cryptographic)
-
-- Deterministically reconstructs the fund transaction and all CETs from the offer/accept parameters
-- Verifies all CET ECDSA adaptor signatures against the oracle's announced nonce and pubkey
-- Reports `CRYPTOGRAPHICALLY VALID (N/N)` or `INVALID` with detail
-
-### Sign message verification (optional)
-
-- Verifies the DlcSign contract ID matches the computed contract ID from the offer/accept
-- Cryptographically verifies the offerer's CET adaptor signatures from the sign message
-- Verifies the offerer's refund signature against the reconstructed refund transaction
-
-### Policy verification and attestations
-
-`verifyDlcAgainstPolicy()` and `POST /api/verify-policy` accept an optional, sparse policy. The verifier always performs every cryptographic check supported by the supplied DLC messages, then evaluates only the policy expectations the caller supplied. A borrower can provide no policy, only an expected oracle pubkey, or a complete lender policy.
-
-The browser UI exposes the same flow behind a collapsed **Policy verification** toggle. Event-ID and additional checks use their own disclosures inside the policy panel. With the toggle off, the standard form and results stay unchanged; when enabled, only supplied policy fields are evaluated and the policy checks, coverage, verdict, digest, and attestation payload are shown.
-
-A complete lender policy supplies the expected lender role, network, collateral, lender funding pubkey, lender payout/refund address, oracle pubkey, and oracle event ID (or the inputs needed to derive it). Optional checks bind CET/refund locktimes and per-outcome lender payouts.
-
-The response keeps three concepts separate:
-
-- `cryptographicVerification` — `pass`, `fail`, or `incomplete`, based only on message/signature verification
-- `policyVerification` — `not_provided`, `pass`, or `fail`, based only on supplied expectations
-- `policyCoverage` — `not_provided`, `partial`, or `complete`
-
-The overall `verdict` is `pass` only when cryptographic verification passes and a complete policy passes. A matching partial policy returns `verdict: "incomplete"` alongside `policyVerification: "pass"`; any supplied expectation mismatch returns `verdict: "fail"`.
-
-For example, an oracle-only policy is valid:
-
-```json
-{
-  "offer": "<offer hex>",
-  "accept": "<accept hex>",
-  "signHex": "<optional sign hex>",
-  "policy": {
-    "expectedOraclePubkey": "<expected x-only oracle pubkey>"
-  }
-}
+CET payouts (3)
+  up    offerer 100,000 sat
+  down  third-party 100,000 sat to bcrt1q3qr7lswmh25nplahuj3m474ujs6vjvpu6976ja
+  flat  offerer 50,000 sat, accepter 50,000 sat
 ```
 
-The result includes:
+## What it checks
 
-- A pass/fail check for every expected term
-- Deterministically reconstructed funding output, refund transaction, and CET transaction IDs
-- A domain-separated transcript hash over offer/accept/sign
-- A canonical `lygos.dlc-verification.v1` attestation payload and digest for downstream signing
+| Stage | What | Check ids |
+|---|---|---|
+| Decode | Each message decodes strictly and re-encodes to the same bytes; unknown TLVs are listed | `decode.*` |
+| Structure | Protocol version, temporary contract id, contract flags, collateral, serial ids, funding inputs, fee rate, size limits | `structure.*` |
+| Oracles | Every announcement signature; every outcome the oracles can attest has a payout; when the events mature | `oracle.*` |
+| Locktimes | CETs unlock by the oracle maturity, the refund after it, both in the same units | `locktime.*` |
+| Transactions | The funding output is the 2-of-2 of both funding keys; the contract id is the rebuilt one | `tx.*` |
+| Signatures | Both parties' CET adaptor and refund signatures, the offerer's funding witnesses, the contract id in the sign message | `sig.*` |
 
-The loan oracle event ID is derived as:
+The result is `pass`, `fail`, or `incomplete` when the messages cannot show everything: with no
+sign message, for example, the offerer's signatures cannot be checked.
 
-```text
-eventType-SHA256(eventType//loanId//repaymentAddress//repaymentAmount)
+It handles every contract shape DDK builds:
+
+- enumerated and numeric outcomes, one oracle or a threshold of several, and contracts with
+  several contract infos;
+- contract flag `0x01`, which refunds all the collateral to the accepter;
+- DDK's payout-script override (TLV 65005), which pays a CET's accepter share to another script,
+  a liquidator for example. dlc-verify lists that payee as `third-party`.
+
+### What a pass does not tell you
+
+- **That these are the terms you agreed to.** A pass says the messages are consistent and signed.
+  To check amounts, keys, payout addresses, oracles and dates, give dlc-verify a
+  [policy](docs/policy.md) or a [profile](docs/profiles.md) with the terms you expect.
+- **Who the oracle is.** The oracle's key is in the offer. Compare it with one you trust, in a
+  policy; `dlc-verify oracles` lists the keys dlc-verify knows by name.
+- **Anything on chain.** dlc-verify does not look at the blockchain: whether the funding
+  transaction confirmed, or its output is still unspent, is for your node or a block explorer.
+- **The accepter's funding witnesses.** They are not in the messages.
+
+## Install
+
+**A release.** Download the archive for your platform from
+[Releases](https://github.com/LygosLabs/dlc-verify/releases). Each release lists the SHA-256 of
+every file in `SHA256SUMS` and has a GitHub build attestation; check one with:
+
+```sh
+gh attestation verify dlc-verify-v2.0.0-x86_64-unknown-linux-gnu.tar.gz --repo LygosLabs/dlc-verify
 ```
 
-Bitcoin block inclusion and unspent-output checks intentionally remain outside this library. An integration adapter can query a configured Bitcoin RPC and bind the result to `fundingTxId` and `fundOutputIndex` from the attestation payload.
+**From source**, with Rust 1.94 or later:
 
-### CET execution (optional — escape hatch)
-
-When provided with an oracle attestation in addition to offer/accept/sign, the tool can produce a **fully signed, broadcastable CET transaction**. This is the "escape hatch" — if the platform goes down, a party with their DLC messages and the oracle attestation can settle the contract independently on-chain.
-
-- Decrypts both parties' adaptor signatures using the oracle's attestation scalar
-- Builds the 2-of-2 multisig witness and produces a broadcastable transaction hex
-- Available via CLI (`--attestation <hex>`) and API (`POST /api/execute`)
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Node.js 18+ required
-- pnpm (recommended) or npm
-
-### Install
-
-```bash
-pnpm install
-pnpm run build  # Compile TypeScript
+```sh
+cargo install --locked --git https://github.com/LygosLabs/dlc-verify dlc-verify-cli
 ```
 
-### Run Web UI
+## Use
 
-```bash
-pnpm start
-# Open http://localhost:3456
+The messages come as a JSON bundle `{"offer": "a71a…", "accept": "a71c…", "sign": "a71e…"}`, or
+one at a time in hex. Each input is a file path, `-` for standard input, or the text itself.
+
+```sh
+dlc-verify verify bundle.json
+dlc-verify verify --offer @offer.hex --accept @accept.hex --sign @sign.hex
+dlc-verify verify bundle.json --format json > report.json
+
+dlc-verify verify bundle.json --policy expected.toml
+dlc-verify verify bundle.json --profile lygos-loan --terms deal.toml
+
+dlc-verify settle bundle.json --attestation fdd868…
+dlc-verify refund bundle.json
 ```
 
-The hosted Vercel UI uses `POST /api/verify` as a thin proxy to the Rust verifier
-running in Turnkey Verifiable Cloud. It supports the full policy form described
-above, including direct or derived event IDs. The proxy verifies the Turnkey
-P-256 App Proof signature, pins the verifier version, checks the one-time
-challenge, recomputes the canonical request digest, and renders only the result
-contained in the signed proof payload. It does not run the TypeScript verifier
-on Vercel.
-
-The downloadable proof JSON includes the normalized request, signed policy
-result, App Proof, and execution metadata so the request binding can be checked
-independently. The browser flow does not independently validate the workload's
-Boot Proof or match it to a trusted release policy; that additional check is
-required before treating a result as authorization-grade TEE evidence.
-
-The production Turnkey application is the default target. Self-hosted deployments
-may set `TVC_VERIFIER_URL` to another HTTPS `*.app.turnkey.cloud` application
-origin.
-
-### Run CLI
-
-```bash
-pnpm run verify              # Use sample data
-pnpm run verify -- --help    # Show help
-pnpm run verify -- --offer <hex> --accept <hex>
-pnpm run verify -- --offer <hex> --accept <hex> --sign <hex>
-pnpm run verify -- --offer <hex> --accept <hex> --sign <hex> --attestation <hex>
-pnpm run verify -- --offer <hex> --accept <hex> --oracle-pubkey <xonly_pubkey>
-```
-
-Sample offer/accept hex is stored in `examples/sample.json` for testing.
-
-**Expected output:**
-
-```
-DLC Verification Report
-=======================
-
-Contract type: Enumerated
-Total collateral: 0.00020000 BTC (20000 sats)
-...
-Adaptor signature verification:
-  Fund TX ID: fdc7dfe8...
-  CET count: 4
-  CET adaptor signatures: CRYPTOGRAPHICALLY VALID (4/4)
-```
-
----
-
-## Dependencies
-
-| Package | Purpose |
+| Command | What it does |
 |---|---|
-| `@node-dlc/messaging` | DLC message deserialization |
-| `bitcoinjs-lib` | P2WSH address reconstruction |
-| `bitcoin-networks` | Chain hash detection (mainnet/regtest) |
-| `bip-schnorr` | Oracle announcement Schnorr sig verification |
-| `@bennyblader/ddk-ts` | ECDSA adaptor sig verification via DDK |
+| `verify` | Rebuild the contract and check every message and signature. With `--policy` or `--profile`, also check the terms |
+| `inspect` | Print what the messages say, without verifying them |
+| `settle` | Complete the CET for an oracle's attestation, ready to broadcast. Needs no keys |
+| `refund` | Complete the refund, ready to broadcast after the refund locktime. Needs no keys |
+| `profile` | Print the policy a profile builds from deal terms, to save and edit |
+| `oracles` | List the oracle keys dlc-verify knows by name |
 
-`@bennyblader/ddk-ts` is a public MIT-licensed npm package containing pre-compiled native binaries (arm64/x64). It provides the cryptographic transaction reconstruction and adaptor signature verification.
+`dlc-verify <command> --help` describes every option. `verify` exits 0 when every check passes,
+1 when one fails, 2 when the result is incomplete and 3 on bad arguments or an invalid policy.
+Maturity checks use the system clock; pass `--now <unix time>` or `--no-clock` to choose.
 
----
+The JSON report (`--format json`) is versioned: its `schema` is `dlc-verify.report.v1`.
 
-## How adaptor signature verification works
+## The web page
 
-The key cryptographic claim being verified: *"The accepter's adaptor signatures are valid ECDSA adaptor signatures, locked to the oracle's announced nonce, that will decrypt to valid CET signatures once the oracle attests to an outcome."*
+[`web/`](web) is a static page that does what the command-line tool does, in the browser,
+through a WebAssembly build. Messages never leave the page. See [docs/web.md](docs/web.md) to run
+or host it.
 
-The verification steps:
+## Docs
 
-1. **Reconstruct the fund transaction** — using the exact parameters from the offer/accept messages, DDK deterministically builds the fund transaction and CET set implied by the DLC.
+- [Policy files](docs/policy.md): state the terms you expect
+- [Profiles](docs/profiles.md): ready-made policies for Lygos loans
+- [Settling without keys](docs/settle.md): `settle` and `refund`
+- [The WebAssembly module](docs/wasm.md) and [the web page](docs/web.md)
+- [Test vectors](fixtures/README.md)
 
-2. **Build tagged attestation messages** — each outcome string (e.g. `"repaid"`) is hashed as `SHA256(SHA256(tag) || SHA256(tag) || outcome_utf8)` where `tag = "DLC/oracle/attestation/v0"`. This is the DLC spec's oracle attestation message format.
+## Layout
 
-3. **Verify adaptor signatures** — DDK's `verifyCetAdaptorSigsFromOracleInfo` checks that each adaptor signature in `DlcAccept.cetAdaptorSignatures` satisfies the ECDSA adaptor equation:
+| Path | What |
+|---|---|
+| `crates/dlc-verify-core` | Decode, rebuild with DDK, check, report. No I/O and no clock |
+| `crates/dlc-verify-policy` | Policies, the oracle registry and profiles |
+| `crates/dlc-verify-settle` | Keyless CET and refund completion |
+| `crates/dlc-verify-cli` | The `dlc-verify` command |
+| `crates/dlc-verify-wasm` | The WebAssembly module behind the web page |
+| `web/` | The web page |
+| `fixtures/` | Signed test contracts and the reports they should produce |
+| `tools/fixture-gen` | Makes the test contracts with DDK |
+| `examples/` | Messages from Lygos test loans |
 
-   ```
-   VerifyAdaptor(sig, proof, adaptor_point, cet_sighash, accepter_funding_pubkey)
-   ```
+The crates are not published to crates.io; use them as git dependencies.
 
-   where `adaptor_point = R + H(R, P, msg) * G` (the oracle's anticipated signature point for that outcome).
+## Development
 
-4. **Report VALID/INVALID** — if all N adaptor signatures pass, the contract is cryptographically sound.
-
-**Why this matters:** A valid adaptor signature means funds can only be claimed by the party who receives the oracle's attestation signature for that specific outcome. The guarantee comes from the cryptography, not from the application that produced the DLC.
-
----
-
-## Architecture
-
-```
-Hosted web verification:
-browser UI → Vercel /api/verify proxy → Rust verifier in Turnkey TVC
-           ← signed App Proof result ←
-
-src/
-├── verify.ts          # Main verification logic (CLI + library)
-├── policy.ts          # Fail-closed lender policy and attestation payload
-├── server.ts          # Express web server
-└── types.ts           # TypeScript interfaces
-
-examples/
-└── sample.json        # Sample DLC offer/accept hex for testing
-
-public/
-└── index.html         # Web UI
-
-api/
-├── verify.js          # TVC proxy + App Proof signature/challenge verification
-└── execute.js         # Optional CET execution API
-
-Verification layers:
-├── Structural: @node-dlc/messaging deserialization
-│   ├── DlcOffer.deserialize(hex)
-│   ├── DlcAccept.deserialize(hex)
-│   ├── Oracle announcement Schnorr sig check (bip-schnorr)
-│   └── P2WSH address reconstruction (bitcoinjs-lib)
-│
-└── Cryptographic: DDK native binary (@bennyblader/ddk-ts)
-    ├── createDlcTransactions() → fund TX + CETs + refund TX
-    ├── verifyCetAdaptorSigsFromOracleInfo() → true/false
-    └── secp256k1 ECDSA verification → both refund signatures
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+tools/build-wasm.sh    # the WebAssembly module and the web page's tests; see docs/wasm.md
 ```
 
-No wallet. No private keys. Stateless. Local CLI and self-hosted operation remain
-available; the Vercel-hosted verification path delegates verification to the
-publicly inspectable Rust workload in Turnkey TVC.
+See [CONTRIBUTING.md](CONTRIBUTING.md). To release, push a tag `vX.Y.Z` that matches the version
+in `Cargo.toml`: the release workflow builds the command-line tool for Linux, macOS and Windows
+and the web page, and drafts a GitHub release with them.
 
----
+## The TypeScript version
 
-## Security model
+dlc-verify 1.x was written in TypeScript on node-dlc, with a hosted verifier in Turnkey TVC. It
+is kept at tag `v1.0.0-typescript` and branch `legacy/typescript`, and is no longer maintained.
 
-- **No private keys handled.** The tool only reads message hex and computes public verification.
-- **No opaque hosted result.** The Vercel proxy validates the P-256 signature on the Turnkey App Proof and binds it to a fresh browser challenge before displaying its signed result.
-- **Local verification remains available.** You can run the TypeScript verifier locally or self-host it yourself.
-- **Authorization requires a trusted release policy.** An App Proof authenticates the workload result, but relying parties must also validate the exact Turnkey Boot Proof against an approved workload release.
-- **Oracle pubkeys are visible in the DlcOffer.** The oracle's identity and nonce commitment are embedded in the offer. You can compare that pubkey against one you obtained independently, or against a known oracle registry in your own deployment.
-- **DDK is open source.** The native binary is built from [dlcdevkit](https://github.com/bennyblader/ddk-ffi), source-available under MIT.
+## Security
 
----
-
-## Roadmap
-
-- [ ] Accept hex via stdin in addition to CLI args
-- [x] DlcSign verification (contract ID match + cryptographic offerer adaptor signatures)
-- [x] Refund signature verification for DlcAccept and DlcSign
-- [x] Fail-closed policy verification and deterministic attestation payload
-- [ ] Broader DLC shape support beyond the current enumerated focus
-- [ ] Oracle pubkey registry / known-oracle presets for hosted deployments
-- [ ] Optional hosted instance
-
----
+Report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)

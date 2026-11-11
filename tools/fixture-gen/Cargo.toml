@@ -1,0 +1,25 @@
+[package]
+name = "fixture-gen"
+description = "Generates the signed DLC test vectors in fixtures/ with ddk::contract"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+bitcoin = { workspace = true }
+ddk = { workspace = true }
+ddk-dlc = { workspace = true }
+ddk-manager = { workspace = true }
+ddk-messages = { workspace = true }
+ddk-trie = { workspace = true }
+dlc-verify-policy = { workspace = true }
+hex = { workspace = true }
+lightning = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

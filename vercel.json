@@ -1,34 +1,27 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm ci",
-  "buildCommand": "npm run build",
-  "outputDirectory": "public",
-  "functions": {
-    "api/verify.js": {
-      "maxDuration": 30
-    },
-    "api/execute.js": {
-      "maxDuration": 30,
-      "includeFiles": "node_modules/@bennyblader/ddk-ts*/**"
-    }
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "test -f web/pkg/dlc_verify_wasm_bg.wasm || { echo 'web/pkg is missing. CI builds it with tools/build-wasm.sh and deploys with vercel deploy --prebuilt; see docs/web.md.' >&2; exit 1; }",
+  "outputDirectory": "web",
+  "git": {
+    "deploymentEnabled": false
   },
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        }
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors 'none'" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()" }
       ]
+    },
+    {
+      "source": "/(.*)\\.wasm",
+      "headers": [{ "key": "Content-Type", "value": "application/wasm" }]
     }
   ]
 }

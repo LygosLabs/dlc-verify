@@ -9,3 +9,9 @@ dist/
 .env*
 operator-*.json
 *.pdf
+
+# Rust
+/target/
+
+# Built by tools/build-wasm.sh
+/web/pkg/

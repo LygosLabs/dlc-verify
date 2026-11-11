@@ -1,0 +1,50 @@
+[workspace]
+members = ["crates/*", "tools/fixture-gen"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+version = "2.0.0"
+license = "MIT"
+repository = "https://github.com/LygosLabs/dlc-verify"
+rust-version = "1.94"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[workspace.dependencies]
+# DDK crates are pinned to one exact release. Bump them together.
+ddk-dlc = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "use-serde"] }
+ddk-messages = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "use-serde"] }
+ddk-trie = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "use-serde"] }
+ddk-manager = { version = "=2.0.0-rc.10", default-features = false, features = ["std"] }
+bitcoin = { version = "0.32.6", default-features = false, features = ["std"] }
+lightning = { version = "0.2.2", default-features = false, features = ["std"] }
+secp256k1-zkp = { version = "0.11.0", default-features = false, features = ["std"] }
+
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+hex = "0.4.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+toml = "0.8"
+# The wasm-bindgen CLI that builds web/pkg must be this exact version.
+wasm-bindgen = "=0.2.127"
+
+ddk = { version = "=2.0.0-rc.10", default-features = false }
+
+dlc-verify-core = { path = "crates/dlc-verify-core" }
+dlc-verify-policy = { path = "crates/dlc-verify-policy" }
+dlc-verify-settle = { path = "crates/dlc-verify-settle" }
+
+[profile.release]
+lto = true
+codegen-units = 1

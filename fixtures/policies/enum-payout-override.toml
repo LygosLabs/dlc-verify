@@ -1,0 +1,49 @@
+# Every term of the enum-payout-override vector. `dlc-verify verify --policy` passes it.
+schema = "dlc-verify.policy.v1"
+name = "enum-payout-override"
+network = "regtest"
+total_collateral_sat = 100000
+max_fee_rate_per_vb = 10
+contract_flags = []
+allowed_tlvs = [65005]
+require_every_cet = true
+
+[offerer]
+funding_pubkey = "02b9061abab4ad98d48f509147c5ad04e08752aaeb9c340247d61b49d11bd7bc29"
+payout = "bcrt1qkzsfhm2tw5pgxwf3d5yya02hsd0x7vtccr7lvc"
+collateral_sat = 50000
+
+[accepter]
+funding_pubkey = "0304c0d42d4cd3f927c5dc2d2bbc95597151ea25589cee48811650a5ea65dfc9b4"
+payout = "bcrt1q3483k0uzgljf4e2mec5zhvc0fym0tfv685xaqg"
+collateral_sat = 50000
+
+[oracle]
+pubkeys = ["a8ecd305fc21c765c7fec0eb645192368367f5c6d2efc794f290065d4c2d70bd"]
+event_ids = ["enum-payout-override"]
+maturity = 1767225600
+threshold = 1
+
+[locktimes]
+cet = 1767225600
+refund = 1767830400
+refund_delay = 604800
+
+[refund]
+pay = [
+  { party = "offerer", value_sat = 50000 },
+  { party = "accepter", value_sat = 50000 },
+]
+
+[[cets]]
+outcome = "up"
+pay = [{ party = "offerer", value_sat = 100000 }]
+
+# The liquidator: a payout-script override sends the accepter's "down" payout here.
+[[cets]]
+outcome = "down"
+pay = [{ address = "bcrt1q3qr7lswmh25nplahuj3m474ujs6vjvpu6976ja", value_sat = 100000 }]
+
+[[cets]]
+outcome = "flat"
+pay = [{ party = "offerer", value_sat = 50000 }, { party = "accepter", value_sat = 50000 }]
